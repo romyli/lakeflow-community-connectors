@@ -39,9 +39,7 @@ def register_lakeflow_source(spark):
                 raise ValueError(f"Expected a dictionary for StructType, got {type(value)}")
             # Spark Python -> Arrow conversion require missing StructType fields to be assigned None.
             if value == {}:
-                raise ValueError(
-                    f"field in StructType cannot be an empty dict. Please assign None as the default value instead."
-                )
+                raise ValueError(f"field in StructType cannot be an empty dict. Please assign None as the default value instead.")
             # For StructType, recursively parse fields into a Row
             field_dict = {}
             for field in field_type.fields:
@@ -49,15 +47,11 @@ def register_lakeflow_source(spark):
                 # 1. set it to None when schema marks it as nullable
                 # 2. Otherwise, raise an error.
                 if field.name in value:
-                    field_dict[field.name] = parse_value(
-                        value.get(field.name), field.dataType
-                    )
+                    field_dict[field.name] = parse_value(value.get(field.name), field.dataType)
                 elif field.nullable:
                     field_dict[field.name] = None
                 else:
-                    raise ValueError(
-                        f"Field {field.name} is not nullable but not found in the input"
-                    )
+                    raise ValueError(f"Field {field.name} is not nullable but not found in the input")
 
             return Row(**field_dict)
         elif isinstance(field_type, ArrayType):
@@ -74,10 +68,7 @@ def register_lakeflow_source(spark):
             # Handle MapType - new support
             if not isinstance(value, dict):
                 raise ValueError(f"Expected a dictionary for MapType, got {type(value)}")
-            return {
-                parse_value(k, field_type.keyType): parse_value(v, field_type.valueType)
-                for k, v in value.items()
-            }
+            return {parse_value(k, field_type.keyType): parse_value(v, field_type.valueType) for k, v in value.items()}
         # Handle primitive types with more robust error handling and type conversion
         try:
             if isinstance(field_type, StringType):
@@ -156,10 +147,7 @@ def register_lakeflow_source(spark):
                 raise TypeError(f"Unsupported field type: {field_type}")
         except (ValueError, TypeError) as e:
             # Add context to the error
-            raise ValueError(
-                f"Error converting '{value}' ({type(value)}) to {field_type}: {str(e)}"
-            )
-
+            raise ValueError(f"Error converting '{value}' ({type(value)}) to {field_type}: {str(e)}")
 
     ########################################################
     # sources/zoho_crm/zoho_crm.py
@@ -182,13 +170,11 @@ def register_lakeflow_source(spark):
             "Users": {"type": "settings", "endpoint": "/crm/v8/users", "data_key": "users"},
             "Roles": {"type": "settings", "endpoint": "/crm/v8/settings/roles", "data_key": "roles"},
             "Profiles": {"type": "settings", "endpoint": "/crm/v8/settings/profiles", "data_key": "profiles"},
-
             # Subform tables - extracted from parent records
             "Quoted_Items": {"type": "subform", "parent_module": "Quotes", "subform_field": "Quoted_Items"},
             "Ordered_Items": {"type": "subform", "parent_module": "Sales_Orders", "subform_field": "Ordered_Items"},
             "Invoiced_Items": {"type": "subform", "parent_module": "Invoices", "subform_field": "Invoiced_Items"},
             "Purchase_Items": {"type": "subform", "parent_module": "Purchase_Orders", "subform_field": "Purchased_Items"},
-
             # Junction/Related tables - fetched via Related Records API
             "Campaigns_Leads": {"type": "related", "parent_module": "Campaigns", "related_module": "Leads"},
             "Campaigns_Contacts": {"type": "related", "parent_module": "Campaigns", "related_module": "Contacts"},
@@ -201,23 +187,23 @@ def register_lakeflow_source(spark):
 
             Expected options:
                 - client_id: OAuth Client ID from Zoho API Console
-                - client_secret: OAuth Client Secret from Zoho API Console
-                - refresh_token: Long-lived refresh token obtained from OAuth flow
+                - client_value_tmp: OAuth Client Secret from Zoho API Console
+                - refresh_value_tmp: Long-lived refresh token obtained from OAuth flow
                 - base_url (optional): Zoho accounts URL for OAuth. Defaults to https://accounts.zoho.com
                   Examples: https://accounts.zoho.com (US), https://accounts.zoho.eu (EU),
                             https://accounts.zoho.in (IN), https://accounts.zoho.com.au (AU)
                 - initial_load_start_date (optional): Starting point for the first sync. If omitted, syncs all historical data.
 
-            Note: To obtain the refresh_token, follow the OAuth setup guide in
+            Note: To obtain the refresh_value_tmp, follow the OAuth setup guide in
             sources/zoho_crm/configs/README.md or visit:
             https://www.zoho.com/accounts/protocol/oauth/web-apps/authorization.html
             """
             self.client_id = options.get("client_id")
-            self.client_secret = options.get("client_secret")
-            self.refresh_token = options.get("refresh_token")
+            self.client_value_tmp = options.get("client_value_tmp")
+            self.refresh_value_tmp = options.get("refresh_value_tmp")
 
-            if not all([self.client_id, self.client_secret, self.refresh_token]):
-                raise ValueError("Zoho CRM connector requires 'client_id', 'client_secret', and 'refresh_token' in options")
+            if not all([self.client_id, self.client_value_tmp, self.refresh_value_tmp]):
+                raise ValueError("Zoho CRM connector requires 'client_id', 'client_value_tmp', and 'refresh_value_tmp' in options")
 
             # base_url is the accounts/OAuth URL (e.g., https://accounts.zoho.eu)
             self.accounts_url = options.get("base_url", "https://accounts.zoho.com").rstrip("/")
@@ -260,10 +246,10 @@ def register_lakeflow_source(spark):
             token_url = f"{self.accounts_url}/oauth/v2/token"
 
             data = {
-                "refresh_token": self.refresh_token,
+                "refresh_value_tmp": self.refresh_value_tmp,
                 "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "grant_type": "refresh_token",
+                "client_value_tmp": self.client_value_tmp,
+                "grant_type": "refresh_value_tmp",
             }
 
             response = requests.post(token_url, data=data)
@@ -280,7 +266,7 @@ def register_lakeflow_source(spark):
                 raise Exception(
                     f"Token refresh response missing 'access_token'. "
                     f"Response: {token_data}. "
-                    f"Please check your client_id, client_secret, and refresh_token are valid."
+                    f"Please check your client_id, client_value_tmp, and refresh_value_tmp are valid."
                 )
 
             self.access_token = token_data["access_token"]
@@ -564,50 +550,82 @@ def register_lakeflow_source(spark):
         def _get_settings_table_schema(self, table_name: str, config: dict) -> StructType:
             """Get schema for settings tables (Users, Roles, Profiles)."""
             if table_name == "Users":
-                return StructType([
-                    StructField("id", StringType(), False),
-                    StructField("name", StringType(), True),
-                    StructField("email", StringType(), True),
-                    StructField("first_name", StringType(), True),
-                    StructField("last_name", StringType(), True),
-                    StructField("role", StructType([
-                        StructField("id", StringType(), True),
+                return StructType(
+                    [
+                        StructField("id", StringType(), False),
                         StructField("name", StringType(), True),
-                    ]), True),
-                    StructField("profile", StructType([
-                        StructField("id", StringType(), True),
-                        StructField("name", StringType(), True),
-                    ]), True),
-                    StructField("status", StringType(), True),
-                    StructField("created_time", StringType(), True),
-                    StructField("Modified_Time", StringType(), True),
-                    StructField("confirm", BooleanType(), True),
-                    StructField("territories", ArrayType(StructType([
-                        StructField("id", StringType(), True),
-                        StructField("name", StringType(), True),
-                    ])), True),
-                ])
+                        StructField("email", StringType(), True),
+                        StructField("first_name", StringType(), True),
+                        StructField("last_name", StringType(), True),
+                        StructField(
+                            "role",
+                            StructType(
+                                [
+                                    StructField("id", StringType(), True),
+                                    StructField("name", StringType(), True),
+                                ]
+                            ),
+                            True,
+                        ),
+                        StructField(
+                            "profile",
+                            StructType(
+                                [
+                                    StructField("id", StringType(), True),
+                                    StructField("name", StringType(), True),
+                                ]
+                            ),
+                            True,
+                        ),
+                        StructField("status", StringType(), True),
+                        StructField("created_time", StringType(), True),
+                        StructField("Modified_Time", StringType(), True),
+                        StructField("confirm", BooleanType(), True),
+                        StructField(
+                            "territories",
+                            ArrayType(
+                                StructType(
+                                    [
+                                        StructField("id", StringType(), True),
+                                        StructField("name", StringType(), True),
+                                    ]
+                                )
+                            ),
+                            True,
+                        ),
+                    ]
+                )
             elif table_name == "Roles":
-                return StructType([
-                    StructField("id", StringType(), False),
-                    StructField("name", StringType(), True),
-                    StructField("display_label", StringType(), True),
-                    StructField("reporting_to", StructType([
-                        StructField("id", StringType(), True),
+                return StructType(
+                    [
+                        StructField("id", StringType(), False),
                         StructField("name", StringType(), True),
-                    ]), True),
-                    StructField("admin_user", BooleanType(), True),
-                ])
+                        StructField("display_label", StringType(), True),
+                        StructField(
+                            "reporting_to",
+                            StructType(
+                                [
+                                    StructField("id", StringType(), True),
+                                    StructField("name", StringType(), True),
+                                ]
+                            ),
+                            True,
+                        ),
+                        StructField("admin_user", BooleanType(), True),
+                    ]
+                )
             elif table_name == "Profiles":
-                return StructType([
-                    StructField("id", StringType(), False),
-                    StructField("name", StringType(), True),
-                    StructField("display_label", StringType(), True),
-                    StructField("default", BooleanType(), True),
-                    StructField("description", StringType(), True),
-                    StructField("created_time", StringType(), True),
-                    StructField("Modified_Time", StringType(), True),
-                ])
+                return StructType(
+                    [
+                        StructField("id", StringType(), False),
+                        StructField("name", StringType(), True),
+                        StructField("display_label", StringType(), True),
+                        StructField("default", BooleanType(), True),
+                        StructField("description", StringType(), True),
+                        StructField("created_time", StringType(), True),
+                        StructField("Modified_Time", StringType(), True),
+                    ]
+                )
             else:
                 # Fallback minimal schema
                 return StructType([StructField("id", StringType(), False)])
@@ -633,10 +651,16 @@ def register_lakeflow_source(spark):
 
             # Common line item fields
             common_fields = [
-                StructField("Product_Name", StructType([
-                    StructField("id", StringType(), True),
-                    StructField("name", StringType(), True),
-                ]), True),
+                StructField(
+                    "Product_Name",
+                    StructType(
+                        [
+                            StructField("id", StringType(), True),
+                            StructField("name", StringType(), True),
+                        ]
+                    ),
+                    True,
+                ),
                 StructField("Quantity", DoubleType(), True),
                 StructField("Unit_Price", DoubleType(), True),
                 StructField("List_Price", DoubleType(), True),
@@ -684,10 +708,16 @@ def register_lakeflow_source(spark):
                     StructField("Last_Name", StringType(), True),
                     StructField("Email", StringType(), True),
                     StructField("Phone", StringType(), True),
-                    StructField("Account_Name", StructType([
-                        StructField("id", StringType(), True),
-                        StructField("name", StringType(), True),
-                    ]), True),
+                    StructField(
+                        "Account_Name",
+                        StructType(
+                            [
+                                StructField("id", StringType(), True),
+                                StructField("name", StringType(), True),
+                            ]
+                        ),
+                        True,
+                    ),
                 ]
             elif related_module == "Contact_Roles":
                 # Deal Contact Roles have a special structure
@@ -898,8 +928,9 @@ def register_lakeflow_source(spark):
                         response = self._make_request("GET", endpoint, params=params)
                     except requests.exceptions.HTTPError as e:
                         if e.response.status_code == 401 and table_name == "Users":
-                            print(f"[WARNING] Users table requires ZohoCRM.users.READ scope. "
-                                  f"Please re-authorize with additional scopes to access user data.")
+                            print(
+                                f"[WARNING] Users table requires ZohoCRM.users.READ scope. " f"Please re-authorize with additional scopes to access user data."
+                            )
                             return  # Return empty generator
                         raise
                     except Exception as e:
@@ -1047,11 +1078,7 @@ def register_lakeflow_source(spark):
                         }
 
                         try:
-                            response = self._make_request(
-                                "GET", 
-                                f"/crm/v8/{parent_module}/{parent_id}/{related_module}",
-                                params=params
-                            )
+                            response = self._make_request("GET", f"/crm/v8/{parent_module}/{parent_id}/{related_module}", params=params)
                         except requests.exceptions.HTTPError as e:
                             # 204 No Content, 400 (no data), or 404 means no related records
                             if e.response.status_code in (204, 400, 404):
@@ -1252,7 +1279,6 @@ def register_lakeflow_source(spark):
 
                 page += 1
 
-
     ########################################################
     # pipeline/lakeflow_python_source.py
     ########################################################
@@ -1260,7 +1286,6 @@ def register_lakeflow_source(spark):
     METADATA_TABLE = "_lakeflow_metadata"
     TABLE_NAME = "tableName"
     TABLE_NAME_LIST = "tableNameList"
-
 
     class LakeflowStreamReader(SimpleDataSourceStreamReader):
         """
@@ -1284,9 +1309,7 @@ def register_lakeflow_source(spark):
             return {}
 
         def read(self, start: dict) -> (Iterator[tuple], dict):
-            records, offset = self.lakeflow_connect.read_table(
-                self.options["tableName"], start, self.options
-            )
+            records, offset = self.lakeflow_connect.read_table(self.options["tableName"], start, self.options)
             rows = map(lambda x: parse_value(x, self.schema), records)
             return rows, offset
 
@@ -1297,7 +1320,6 @@ def register_lakeflow_source(spark):
             # For tables ingested as incremental CDC, it is only necessary that no new changes
             # are missed in the returned records.
             return self.read(start)[0]
-
 
     class LakeflowBatchReader(DataSourceReader):
         def __init__(
@@ -1316,9 +1338,7 @@ def register_lakeflow_source(spark):
             if self.table_name == METADATA_TABLE:
                 all_records = self._read_table_metadata()
             else:
-                all_records, _ = self.lakeflow_connect.read_table(
-                    self.table_name, None, self.options
-                )
+                all_records, _ = self.lakeflow_connect.read_table(self.table_name, None, self.options)
 
             rows = map(lambda x: parse_value(x, self.schema), all_records)
             return iter(rows)
@@ -1331,7 +1351,6 @@ def register_lakeflow_source(spark):
                 metadata = self.lakeflow_connect.read_table_metadata(table, self.options)
                 all_records.append({"tableName": table, **metadata})
             return all_records
-
 
     class LakeflowSource(DataSource):
         def __init__(self, options):
@@ -1362,6 +1381,5 @@ def register_lakeflow_source(spark):
 
         def simpleStreamReader(self, schema: StructType):
             return LakeflowStreamReader(self.options, schema, self.lakeflow_connect)
-
 
     spark.dataSource.register(LakeflowSource)
