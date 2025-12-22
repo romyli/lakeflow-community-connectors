@@ -365,6 +365,8 @@ try:
     print("=" * 80)
     print(f"✅ Configuration saved to: {config_path}")
     print("=" * 80)
+    print()
+    print("💡 Next: Create a Unity Catalog Connection using the saved config values.")
 except Exception as e:
     print("=" * 80)
     print(f"⚠️  Could not save to file: {e}")
@@ -374,38 +376,14 @@ except Exception as e:
     print()
     print(json.dumps(config, indent=4))
 
-print()
-print("💡 TIP: For production, use Databricks Secrets instead of storing credentials in files:")
-print()
-print('   client_id = dbutils.secrets.get(scope="zoho-crm", key="client_id")')
-print('   client_secret = dbutils.secrets.get(scope="zoho-crm", key="client_secret")')
-print('   refresh_token = dbutils.secrets.get(scope="zoho-crm", key="refresh_token")')
-
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Done!
 # MAGIC
-# MAGIC Your Zoho CRM connector is now configured and verified. The connector will automatically handle authentication using the refresh token.
+# MAGIC Your Zoho CRM credentials are verified and saved.
 # MAGIC
 # MAGIC **Next Steps:**
-# MAGIC 1. ✅ (Optional) Store credentials in Databricks Secrets for production use
-# MAGIC 2. ✅ Configure your Lakeflow pipeline with the Zoho CRM connector
-# MAGIC 3. ✅ Start ingesting data!
-# MAGIC
-# MAGIC ### Example Usage
-# MAGIC ```python
-# MAGIC # Using the connector with Lakeflow
-# MAGIC from zoho_crm import LakeflowConnect
-# MAGIC
-# MAGIC connector = LakeflowConnect(options={
-# MAGIC     "client_id": dbutils.secrets.get("zoho-crm", "client_id"),
-# MAGIC     "client_secret": dbutils.secrets.get("zoho-crm", "client_secret"),
-# MAGIC     "refresh_token": dbutils.secrets.get("zoho-crm", "refresh_token"),
-# MAGIC     "base_url": "https://accounts.zoho.eu",  # Your data center
-# MAGIC })
-# MAGIC
-# MAGIC # List available tables
-# MAGIC tables = connector.list_tables()
-# MAGIC print(f"Available tables: {[t['name'] for t in tables]}")
-# MAGIC ```
+# MAGIC 1. Create a **Unity Catalog Connection** using the saved config values
+# MAGIC 2. Configure your Lakeflow pipeline with the Zoho CRM connector
+# MAGIC 3. Start ingesting data!
