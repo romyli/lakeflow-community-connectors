@@ -538,6 +538,10 @@ def register_lakeflow_source(spark):
             Supports incremental reads using Modified_Time cursor and pagination.
             Also fetches deleted records for CDC.
             """
+            print(f"[DEBUG] read_table called for '{table_name}'")
+            print(f"[DEBUG] start_offset: {start_offset}")
+            print(f"[DEBUG] initial_load_start_date: {self.initial_load_start_date}")
+
             # Check if table exists
             available_tables = self.list_tables()
             if table_name not in available_tables:
@@ -547,14 +551,19 @@ def register_lakeflow_source(spark):
             cursor_time = None
             if start_offset and "cursor_time" in start_offset:
                 cursor_time = start_offset["cursor_time"]
+                print(f"[DEBUG] Using cursor_time from start_offset: {cursor_time}")
             elif self.initial_load_start_date:
                 cursor_time = self.initial_load_start_date
+                print(f"[DEBUG] Using cursor_time from initial_load_start_date: {cursor_time}")
+            else:
+                print("[DEBUG] No cursor_time - will fetch all records")
 
             # Apply a 5-minute lookback window to catch late updates
             if cursor_time:
                 cursor_dt = datetime.fromisoformat(cursor_time.replace("Z", "+00:00"))
                 lookback_dt = cursor_dt - timedelta(minutes=5)
                 cursor_time = lookback_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+                print(f"[DEBUG] cursor_time after lookback adjustment: {cursor_time}")
 
             # Get metadata to determine ingestion type
             metadata = self.read_table_metadata(table_name, table_options)
@@ -588,6 +597,7 @@ def register_lakeflow_source(spark):
                 # No records found, keep the same offset
                 next_offset = start_offset or {}
 
+            print(f"[DEBUG] read_table returning. next_offset: {next_offset}")
             return records_iter, next_offset
 
         def _get_json_fields(self, module_name: str) -> set:
@@ -629,13 +639,16 @@ def register_lakeflow_source(spark):
             """
             Read records from a module with pagination.
             """
+            print(f"[DEBUG] _read_records called for '{module_name}' with cursor_time: {cursor_time}")
             self._current_max_modified_time = cursor_time
 
             # Get fields that need JSON serialization
             json_fields = self._get_json_fields(module_name)
+            print(f"[DEBUG] JSON fields to serialize: {json_fields}")
 
             page = 1
             per_page = 200  # Maximum allowed by Zoho CRM
+            total_records_yielded = 0
 
             while True:
                 params = {
@@ -651,14 +664,18 @@ def register_lakeflow_source(spark):
                     criteria = f"(Modified_Time:greater_equal:{cursor_time})"
                     params["criteria"] = criteria
 
+                print(f"[DEBUG] API request: GET /crm/v8/{module_name} with params: {params}")
+
                 try:
                     response = self._make_request("GET", f"/crm/v8/{module_name}", params=params)
+                    print(f"[DEBUG] API response keys: {response.keys() if response else 'None'}")
                 except Exception as e:
-                    print(f"Error fetching page {page} for {module_name}: {e}")
-                    break
+                    print(f"[DEBUG] ERROR fetching page {page} for {module_name}: {e}")
+                    raise
 
                 data = response.get("data", [])
                 info = response.get("info", {})
+                print(f"[DEBUG] Page {page}: got {len(data)} records, info: {info}")
 
                 # Track the maximum Modified_Time seen
                 for record in data:
@@ -667,11 +684,14 @@ def register_lakeflow_source(spark):
                         if not self._current_max_modified_time or modified_time > self._current_max_modified_time:
                             self._current_max_modified_time = modified_time
 
+                    total_records_yielded += 1
                     yield self._normalize_record(record, json_fields)
 
                 # Check if there are more pages
                 more_records = info.get("more_records", False)
+                print(f"[DEBUG] more_records: {more_records}, data empty: {len(data) == 0}")
                 if not more_records or not data:
+                    print(f"[DEBUG] Stopping pagination. Total records yielded: {total_records_yielded}")
                     break
 
                 page += 1
@@ -694,9 +714,8 @@ def register_lakeflow_source(spark):
                 try:
                     response = self._make_request("GET", f"/crm/v8/{module_name}/deleted", params=params)
                 except Exception as e:
-                    # Some modules may not support deleted records API
-                    print(f"Warning: Could not fetch deleted records for {module_name}: {e}")
-                    break
+                    print(f"[DEBUG] ERROR fetching deleted records for {module_name}: {e}")
+                    raise
 
                 data = response.get("data", [])
                 info = response.get("info", {})
