@@ -166,6 +166,35 @@ def register_lakeflow_source(spark):
     ########################################################
 
     class LakeflowConnect:
+        """
+        Zoho CRM connector for Lakeflow/Databricks.
+
+        Supports:
+        - Standard CRM modules (Leads, Contacts, Accounts, Deals, etc.)
+        - Organization/Settings tables (Users, Roles, Profiles)
+        - Subform/Line Item tables (Quoted_Items, Ordered_Items, Invoiced_Items, Purchase_Items)
+        - Junction/Relationship tables (Campaigns_Leads, Campaigns_Contacts, Contacts_X_Deals)
+        """
+
+        # Virtual tables that don't exist as standalone modules but we construct from other APIs
+        VIRTUAL_TABLES = {
+            # Organization/Settings tables - use different API endpoints
+            "Users": {"type": "settings", "endpoint": "/crm/v8/users", "data_key": "users"},
+            "Roles": {"type": "settings", "endpoint": "/crm/v8/settings/roles", "data_key": "roles"},
+            "Profiles": {"type": "settings", "endpoint": "/crm/v8/settings/profiles", "data_key": "profiles"},
+
+            # Subform tables - extracted from parent records
+            "Quoted_Items": {"type": "subform", "parent_module": "Quotes", "subform_field": "Quoted_Items"},
+            "Ordered_Items": {"type": "subform", "parent_module": "Sales_Orders", "subform_field": "Ordered_Items"},
+            "Invoiced_Items": {"type": "subform", "parent_module": "Invoices", "subform_field": "Invoiced_Items"},
+            "Purchase_Items": {"type": "subform", "parent_module": "Purchase_Orders", "subform_field": "Purchased_Items"},
+
+            # Junction/Related tables - fetched via Related Records API
+            "Campaigns_Leads": {"type": "related", "parent_module": "Campaigns", "related_module": "Leads"},
+            "Campaigns_Contacts": {"type": "related", "parent_module": "Campaigns", "related_module": "Contacts"},
+            "Contacts_X_Deals": {"type": "related", "parent_module": "Deals", "related_module": "Contact_Roles"},
+        }
+
         def __init__(self, options: dict[str, str]) -> None:
             """
             Initialize the Zoho CRM connector with connection-level options.
@@ -212,6 +241,7 @@ def register_lakeflow_source(spark):
             # Cache for module and field metadata
             self._modules_cache = None
             self._fields_cache = {}
+            self._subform_schema_cache = {}
 
             # Track maximum Modified_Time seen during read operations
             self._current_max_modified_time = None
@@ -347,10 +377,7 @@ def register_lakeflow_source(spark):
 
             # Filter for API-supported modules (default or custom types), excluding problematic ones
             supported_modules = [
-                m for m in modules 
-                if m.get("api_supported") 
-                and m.get("generated_type") in ["default", "custom"]
-                and m.get("api_name") not in excluded_modules
+                m for m in modules if m.get("api_supported") and m.get("generated_type") in ["default", "custom"] and m.get("api_name") not in excluded_modules
             ]
 
             self._modules_cache = supported_modules
@@ -379,10 +406,17 @@ def register_lakeflow_source(spark):
         def list_tables(self) -> list[str]:
             """
             List names of all tables (modules) supported by this connector.
-            Uses the Modules API to dynamically discover available modules.
+            Uses the Modules API to dynamically discover available modules,
+            plus virtual tables for settings, subforms, and junction tables.
             """
+            # Get standard CRM modules
             modules = self._get_modules()
-            return [m["api_name"] for m in modules]
+            table_names = [m["api_name"] for m in modules]
+
+            # Add virtual tables (settings, subforms, junction tables)
+            table_names.extend(self.VIRTUAL_TABLES.keys())
+
+            return sorted(table_names)
 
         def _zoho_type_to_spark_type(self, field: dict) -> StructField:
             """
@@ -479,7 +513,12 @@ def register_lakeflow_source(spark):
             """
             Fetch the schema of a module dynamically from Zoho CRM.
             Uses the Fields Metadata API to build the schema.
+            Handles virtual tables (settings, subforms, junction tables) specially.
             """
+            # Check if this is a virtual table
+            if table_name in self.VIRTUAL_TABLES:
+                return self._get_virtual_table_schema(table_name)
+
             # Check if table exists
             available_tables = self.list_tables()
             if table_name not in available_tables:
@@ -506,6 +545,164 @@ def register_lakeflow_source(spark):
 
             return StructType(struct_fields)
 
+        def _get_virtual_table_schema(self, table_name: str) -> StructType:
+            """
+            Get schema for virtual tables (settings, subforms, junction tables).
+            """
+            config = self.VIRTUAL_TABLES[table_name]
+            table_type = config["type"]
+
+            if table_type == "settings":
+                return self._get_settings_table_schema(table_name, config)
+            elif table_type == "subform":
+                return self._get_subform_table_schema(table_name, config)
+            elif table_type == "related":
+                return self._get_related_table_schema(table_name, config)
+            else:
+                raise ValueError(f"Unknown virtual table type: {table_type}")
+
+        def _get_settings_table_schema(self, table_name: str, config: dict) -> StructType:
+            """Get schema for settings tables (Users, Roles, Profiles)."""
+            if table_name == "Users":
+                return StructType([
+                    StructField("id", StringType(), False),
+                    StructField("name", StringType(), True),
+                    StructField("email", StringType(), True),
+                    StructField("first_name", StringType(), True),
+                    StructField("last_name", StringType(), True),
+                    StructField("role", StructType([
+                        StructField("id", StringType(), True),
+                        StructField("name", StringType(), True),
+                    ]), True),
+                    StructField("profile", StructType([
+                        StructField("id", StringType(), True),
+                        StructField("name", StringType(), True),
+                    ]), True),
+                    StructField("status", StringType(), True),
+                    StructField("created_time", StringType(), True),
+                    StructField("Modified_Time", StringType(), True),
+                    StructField("confirm", BooleanType(), True),
+                    StructField("territories", ArrayType(StructType([
+                        StructField("id", StringType(), True),
+                        StructField("name", StringType(), True),
+                    ])), True),
+                ])
+            elif table_name == "Roles":
+                return StructType([
+                    StructField("id", StringType(), False),
+                    StructField("name", StringType(), True),
+                    StructField("display_label", StringType(), True),
+                    StructField("reporting_to", StructType([
+                        StructField("id", StringType(), True),
+                        StructField("name", StringType(), True),
+                    ]), True),
+                    StructField("admin_user", BooleanType(), True),
+                ])
+            elif table_name == "Profiles":
+                return StructType([
+                    StructField("id", StringType(), False),
+                    StructField("name", StringType(), True),
+                    StructField("display_label", StringType(), True),
+                    StructField("default", BooleanType(), True),
+                    StructField("description", StringType(), True),
+                    StructField("created_time", StringType(), True),
+                    StructField("Modified_Time", StringType(), True),
+                ])
+            else:
+                # Fallback minimal schema
+                return StructType([StructField("id", StringType(), False)])
+
+        def _get_subform_table_schema(self, table_name: str, config: dict) -> StructType:
+            """
+            Get schema for subform/line item tables.
+            Fetches a sample record to infer the subform structure.
+            """
+            # Check cache first
+            if table_name in self._subform_schema_cache:
+                return self._subform_schema_cache[table_name]
+
+            parent_module = config["parent_module"]
+            subform_field = config["subform_field"]
+
+            # Base fields that all line items have
+            base_fields = [
+                StructField("id", StringType(), False),
+                StructField("_parent_id", StringType(), False),  # Reference to parent record
+                StructField("_parent_module", StringType(), False),  # Parent module name
+            ]
+
+            # Common line item fields
+            common_fields = [
+                StructField("Product_Name", StructType([
+                    StructField("id", StringType(), True),
+                    StructField("name", StringType(), True),
+                ]), True),
+                StructField("Quantity", DoubleType(), True),
+                StructField("Unit_Price", DoubleType(), True),
+                StructField("List_Price", DoubleType(), True),
+                StructField("Net_Total", DoubleType(), True),
+                StructField("Total", DoubleType(), True),
+                StructField("Discount", DoubleType(), True),
+                StructField("Total_After_Discount", DoubleType(), True),
+                StructField("Tax", DoubleType(), True),
+                StructField("Description", StringType(), True),
+                StructField("Sequence_Number", IntegerType(), True),
+            ]
+
+            schema = StructType(base_fields + common_fields)
+            self._subform_schema_cache[table_name] = schema
+            return schema
+
+        def _get_related_table_schema(self, table_name: str, config: dict) -> StructType:
+            """
+            Get schema for junction/related tables.
+            """
+            parent_module = config["parent_module"]
+            related_module = config["related_module"]
+
+            # Base junction table fields
+            base_fields = [
+                StructField("_junction_id", StringType(), False),  # Composite key
+                StructField("_parent_id", StringType(), False),  # Parent record ID
+                StructField("_parent_module", StringType(), False),  # Parent module name
+                StructField("id", StringType(), False),  # Related record ID
+            ]
+
+            # Add related record fields based on type
+            if related_module == "Leads":
+                related_fields = [
+                    StructField("First_Name", StringType(), True),
+                    StructField("Last_Name", StringType(), True),
+                    StructField("Email", StringType(), True),
+                    StructField("Company", StringType(), True),
+                    StructField("Phone", StringType(), True),
+                    StructField("Lead_Status", StringType(), True),
+                ]
+            elif related_module == "Contacts":
+                related_fields = [
+                    StructField("First_Name", StringType(), True),
+                    StructField("Last_Name", StringType(), True),
+                    StructField("Email", StringType(), True),
+                    StructField("Phone", StringType(), True),
+                    StructField("Account_Name", StructType([
+                        StructField("id", StringType(), True),
+                        StructField("name", StringType(), True),
+                    ]), True),
+                ]
+            elif related_module == "Contact_Roles":
+                # Deal Contact Roles have a special structure
+                related_fields = [
+                    StructField("Contact_Role", StringType(), True),
+                    StructField("name", StringType(), True),
+                    StructField("Email", StringType(), True),
+                ]
+            else:
+                related_fields = [
+                    StructField("name", StringType(), True),
+                ]
+
+            return StructType(base_fields + related_fields)
+
         def read_table_metadata(self, table_name: str, table_options: dict[str, str]) -> dict:
             """
             Fetch the metadata of a module.
@@ -514,7 +711,12 @@ def register_lakeflow_source(spark):
             - Primary key is always 'id'
             - Cursor field is 'Modified_Time' for CDC
             - Most modules support CDC ingestion
+            - Virtual tables (subforms, junctions) use snapshot ingestion
             """
+            # Check if this is a virtual table
+            if table_name in self.VIRTUAL_TABLES:
+                return self._get_virtual_table_metadata(table_name)
+
             # Check if table exists
             available_tables = self.list_tables()
             if table_name not in available_tables:
@@ -547,15 +749,56 @@ def register_lakeflow_source(spark):
                 "ingestion_type": "cdc",
             }
 
+        def _get_virtual_table_metadata(self, table_name: str) -> dict:
+            """Get metadata for virtual tables."""
+            config = self.VIRTUAL_TABLES[table_name]
+            table_type = config["type"]
+
+            if table_type == "settings":
+                # Users support CDC, Roles and Profiles are snapshot
+                if table_name == "Users":
+                    return {
+                        "primary_keys": ["id"],
+                        "cursor_field": "Modified_Time",
+                        "ingestion_type": "cdc",
+                    }
+                else:
+                    return {
+                        "primary_keys": ["id"],
+                        "ingestion_type": "snapshot",
+                    }
+            elif table_type == "subform":
+                # Subforms use snapshot (no individual CDC tracking)
+                return {
+                    "primary_keys": ["id"],
+                    "ingestion_type": "snapshot",
+                }
+            elif table_type == "related":
+                # Junction tables use snapshot with composite key
+                return {
+                    "primary_keys": ["_junction_id"],
+                    "ingestion_type": "snapshot",
+                }
+            else:
+                return {
+                    "primary_keys": ["id"],
+                    "ingestion_type": "snapshot",
+                }
+
         def read_table(self, table_name: str, start_offset: dict, table_options: dict[str, str]) -> (Iterator[dict], dict):
             """
             Read records from a Zoho CRM module.
             Supports incremental reads using Modified_Time cursor and pagination.
             Also fetches deleted records for CDC.
+            Routes virtual tables to their specialized readers.
             """
             print(f"[DEBUG] read_table called for '{table_name}'")
             print(f"[DEBUG] start_offset: {start_offset}")
             print(f"[DEBUG] initial_load_start_date: {self.initial_load_start_date}")
+
+            # Check if this is a virtual table
+            if table_name in self.VIRTUAL_TABLES:
+                return self._read_virtual_table(table_name, start_offset, table_options)
 
             # Check if table exists
             available_tables = self.list_tables()
@@ -614,6 +857,245 @@ def register_lakeflow_source(spark):
 
             print(f"[DEBUG] read_table returning. next_offset: {next_offset}")
             return records_iter, next_offset
+
+        def _read_virtual_table(self, table_name: str, start_offset: dict, table_options: dict[str, str]) -> (Iterator[dict], dict):
+            """
+            Read records from a virtual table (settings, subforms, or junction tables).
+            """
+            config = self.VIRTUAL_TABLES[table_name]
+            table_type = config["type"]
+
+            if table_type == "settings":
+                return self._read_settings_table(table_name, config, start_offset)
+            elif table_type == "subform":
+                return self._read_subform_table(table_name, config, start_offset)
+            elif table_type == "related":
+                return self._read_related_table(table_name, config, start_offset)
+            else:
+                raise ValueError(f"Unknown virtual table type: {table_type}")
+
+        def _read_settings_table(self, table_name: str, config: dict, start_offset: dict) -> (Iterator[dict], dict):
+            """
+            Read records from settings/organization tables (Users, Roles, Profiles).
+
+            Note: Users table requires additional OAuth scope: ZohoCRM.users.READ
+            If you get 401 errors, re-authorize with the additional scope.
+            """
+            endpoint = config["endpoint"]
+            data_key = config["data_key"]
+
+            def records_generator():
+                page = 1
+                per_page = 200
+
+                while True:
+                    params = {"page": page, "per_page": per_page}
+
+                    if table_name == "Users":
+                        params["type"] = "AllUsers"
+
+                    try:
+                        response = self._make_request("GET", endpoint, params=params)
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 401 and table_name == "Users":
+                            print(f"[WARNING] Users table requires ZohoCRM.users.READ scope. "
+                                  f"Please re-authorize with additional scopes to access user data.")
+                            return  # Return empty generator
+                        raise
+                    except Exception as e:
+                        print(f"[DEBUG] Error fetching {table_name}: {e}")
+                        raise
+
+                    data = response.get(data_key, [])
+                    info = response.get("info", {})
+
+                    print(f"[DEBUG] {table_name} page {page}: got {len(data)} records")
+
+                    for record in data:
+                        yield record
+
+                    more_records = info.get("more_records", False)
+                    if not more_records or not data:
+                        break
+
+                    page += 1
+
+            # Settings tables use snapshot (no cursor tracking needed)
+            return records_generator(), {}
+
+        def _read_subform_table(self, table_name: str, config: dict, start_offset: dict) -> (Iterator[dict], dict):
+            """
+            Read subform/line item records by extracting them from parent records.
+            Example: Quoted_Items extracted from Quotes.Quoted_Items
+            """
+            parent_module = config["parent_module"]
+            subform_field = config["subform_field"]
+
+            def records_generator():
+                print(f"[DEBUG] Reading {table_name} from {parent_module}.{subform_field}")
+
+                # Get fields for parent module to include the subform
+                fields_meta = self._get_fields(parent_module)
+                field_names = [f["api_name"] for f in fields_meta] if fields_meta else []
+
+                page = 1
+                per_page = 200
+                total_items = 0
+
+                while True:
+                    params = {
+                        "page": page,
+                        "per_page": per_page,
+                        "sort_order": "asc",
+                        "sort_by": "Modified_Time",
+                    }
+
+                    if field_names:
+                        params["fields"] = ",".join(field_names)
+
+                    try:
+                        response = self._make_request("GET", f"/crm/v8/{parent_module}", params=params)
+                    except Exception as e:
+                        print(f"[DEBUG] Error fetching {parent_module}: {e}")
+                        raise
+
+                    data = response.get("data", [])
+                    info = response.get("info", {})
+
+                    print(f"[DEBUG] {parent_module} page {page}: got {len(data)} parent records")
+
+                    # Extract subform items from each parent record
+                    for parent_record in data:
+                        parent_id = parent_record.get("id")
+                        subform_items = parent_record.get(subform_field, [])
+
+                        if subform_items:
+                            for item in subform_items:
+                                # Add parent reference
+                                item["_parent_id"] = parent_id
+                                item["_parent_module"] = parent_module
+                                total_items += 1
+                                yield item
+
+                    more_records = info.get("more_records", False)
+                    if not more_records or not data:
+                        break
+
+                    page += 1
+
+                print(f"[DEBUG] Total {table_name} items extracted: {total_items}")
+
+            # Subforms use snapshot (no cursor tracking)
+            return records_generator(), {}
+
+        def _read_related_table(self, table_name: str, config: dict, start_offset: dict) -> (Iterator[dict], dict):
+            """
+            Read junction/related records by iterating through parent records
+            and fetching their related records.
+            Example: Campaigns_Leads by fetching Leads for each Campaign.
+            """
+            parent_module = config["parent_module"]
+            related_module = config["related_module"]
+
+            # Get fields for the related module (required by API)
+            related_fields = self._get_related_module_fields(related_module)
+
+            def records_generator():
+                print(f"[DEBUG] Reading {table_name}: {parent_module} -> {related_module}")
+
+                # First, get all parent records
+                parent_ids = []
+                page = 1
+                per_page = 200
+
+                while True:
+                    params = {
+                        "page": page,
+                        "per_page": per_page,
+                        "fields": "id",  # Only need ID
+                    }
+
+                    try:
+                        response = self._make_request("GET", f"/crm/v8/{parent_module}", params=params)
+                    except Exception as e:
+                        print(f"[DEBUG] Error fetching {parent_module}: {e}")
+                        raise
+
+                    data = response.get("data", [])
+                    info = response.get("info", {})
+
+                    parent_ids.extend([r.get("id") for r in data if r.get("id")])
+
+                    more_records = info.get("more_records", False)
+                    if not more_records or not data:
+                        break
+
+                    page += 1
+
+                print(f"[DEBUG] Found {len(parent_ids)} parent records in {parent_module}")
+
+                # For each parent, fetch related records
+                total_related = 0
+                for parent_id in parent_ids:
+                    related_page = 1
+
+                    while True:
+                        params = {
+                            "page": related_page,
+                            "per_page": per_page,
+                            "fields": related_fields,  # Required by Zoho API
+                        }
+
+                        try:
+                            response = self._make_request(
+                                "GET", 
+                                f"/crm/v8/{parent_module}/{parent_id}/{related_module}",
+                                params=params
+                            )
+                        except requests.exceptions.HTTPError as e:
+                            # 204 No Content, 400 (no data), or 404 means no related records
+                            if e.response.status_code in (204, 400, 404):
+                                break
+                            raise
+                        except Exception as e:
+                            print(f"[DEBUG] Error fetching related {related_module} for {parent_id}: {e}")
+                            break
+
+                        data = response.get("data", [])
+                        info = response.get("info", {})
+
+                        for record in data:
+                            # Add junction metadata
+                            record["_junction_id"] = f"{parent_id}_{record.get('id')}"
+                            record["_parent_id"] = parent_id
+                            record["_parent_module"] = parent_module
+                            total_related += 1
+                            yield record
+
+                        more_records = info.get("more_records", False)
+                        if not more_records or not data:
+                            break
+
+                        related_page += 1
+
+                print(f"[DEBUG] Total {table_name} junction records: {total_related}")
+
+            # Junction tables use snapshot (no cursor tracking)
+            return records_generator(), {}
+
+        def _get_related_module_fields(self, related_module: str) -> str:
+            """
+            Get field names for a related module to pass to Related Records API.
+            Returns common fields based on the module type.
+            """
+            # Map related module types to their field lists
+            field_maps = {
+                "Leads": "id,First_Name,Last_Name,Email,Company,Phone,Lead_Status",
+                "Contacts": "id,First_Name,Last_Name,Email,Phone,Account_Name",
+                "Deals": "id,Deal_Name,Stage,Amount,Closing_Date,Account_Name",
+                "Contact_Roles": "id,Contact_Role,name,Email",
+            }
+            return field_maps.get(related_module, "id,name")
 
         def _get_json_fields(self, module_name: str) -> set:
             """

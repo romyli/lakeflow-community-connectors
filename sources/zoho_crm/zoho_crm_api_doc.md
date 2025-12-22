@@ -77,31 +77,132 @@ Notes:
 
 ## **Object List**
 
-Zoho CRM organizes data into **modules** (equivalent to tables/objects in other systems). The module list can be retrieved dynamically via the Metadata API, but standard modules are well-known.
+Zoho CRM organizes data into **modules** (equivalent to tables/objects in other systems). The module list can be retrieved dynamically via the Metadata API.
 
-**Standard modules** (static list for common Zoho CRM installations):
+### Supported Tables (29 total)
+
+These are the tables available for data ingestion through this connector:
 
 | Module Name | API Name | Description | Ingestion Type |
 |------------|----------|-------------|----------------|
+| **Core CRM Objects** ||||
 | Leads | `Leads` | Potential customers or contacts | `cdc` |
 | Contacts | `Contacts` | Individual people associated with accounts | `cdc` |
 | Accounts | `Accounts` | Companies or organizations | `cdc` |
 | Deals | `Deals` | Sales opportunities | `cdc` |
+| **Activities** ||||
 | Tasks | `Tasks` | Activity tasks | `cdc` |
 | Events | `Events` | Calendar events and meetings | `cdc` |
 | Calls | `Calls` | Call logs | `cdc` |
+| Notes | `Notes` | Notes attached to records | `cdc` |
+| Attachments | `Attachments` | File attachments | `append` |
+| **Products & Pricing** ||||
 | Products | `Products` | Product catalog items | `cdc` |
+| Vendors | `Vendors` | Supplier contacts | `cdc` |
+| Price_Books | `Price_Books` | Pricing lists | `cdc` |
+| **Sales Documents** ||||
 | Quotes | `Quotes` | Price quotes sent to customers | `cdc` |
 | Sales_Orders | `Sales_Orders` | Confirmed sales orders | `cdc` |
 | Purchase_Orders | `Purchase_Orders` | Purchase orders to vendors | `cdc` |
 | Invoices | `Invoices` | Billing invoices | `cdc` |
+| **Line Items (Virtual - extracted from parent subforms)** ||||
+| Quoted_Items | `Quoted_Items` | Line items within Quotes | `snapshot` |
+| Ordered_Items | `Ordered_Items` | Line items within Sales_Orders | `snapshot` |
+| Invoiced_Items | `Invoiced_Items` | Line items within Invoices | `snapshot` |
+| Purchase_Items | `Purchase_Items` | Line items within Purchase_Orders | `snapshot` |
+| **Marketing & Support** ||||
 | Campaigns | `Campaigns` | Marketing campaigns | `cdc` |
-| Vendors | `Vendors` | Supplier contacts | `cdc` |
-| Price_Books | `Price_Books` | Pricing lists | `cdc` |
 | Cases | `Cases` | Customer support cases | `cdc` |
 | Solutions | `Solutions` | Knowledge base solutions | `cdc` |
-| Notes | `Notes` | Notes attached to records | `cdc` |
-| Attachments | `Attachments` | File attachments | `append` |
+| **Junction Tables (Virtual - fetched via Related Records API)** ||||
+| Campaigns_Leads | `Campaigns_Leads` | Many-to-many: Campaigns ↔ Leads | `snapshot` |
+| Campaigns_Contacts | `Campaigns_Contacts` | Many-to-many: Campaigns ↔ Contacts | `snapshot` |
+| Contacts_X_Deals | `Contacts_X_Deals` | Many-to-many: Contacts ↔ Deals with roles | `snapshot` |
+| **Organization & Settings (Virtual - fetched via Settings API)** ||||
+| Users | `Users` | CRM users (requires `ZohoCRM.users.READ` scope) | `cdc` |
+| Roles | `Roles` | User roles hierarchy | `snapshot` |
+| Profiles | `Profiles` | Permission profiles | `snapshot` |
+
+> **Note on Virtual Tables**: Line Items, Junction Tables, and Organization tables are not standalone Zoho CRM modules.
+> The connector constructs these by:
+> - **Line Items**: Extracting subform data from parent records (Quotes, Sales_Orders, Invoices, Purchase_Orders)
+> - **Junction Tables**: Calling the Related Records API for each parent record
+> - **Organization Tables**: Using dedicated settings endpoints (`/crm/v8/users`, `/crm/v8/settings/roles`, `/crm/v8/settings/profiles`)
+
+---
+
+### All Modules from API (with exclusion reasons)
+
+The `GET /crm/v8/settings/modules` endpoint returns all modules in Zoho CRM. Below is the complete list with status and reasons for exclusion:
+
+| API Name | Status | Reason |
+|----------|--------|--------|
+| **Supported Data Modules** |||
+| `Accounts` | ✅ Supported | Core CRM data |
+| `Attachments` | ✅ Supported | File attachment records |
+| `Calls` | ✅ Supported | Call activity logs |
+| `Campaigns` | ✅ Supported | Marketing campaigns |
+| `Cases` | ✅ Supported | Support tickets |
+| `Contacts` | ✅ Supported | Contact records |
+| `Deals` | ✅ Supported | Sales opportunities |
+| `Events` | ✅ Supported | Calendar events |
+| `Invoices` | ✅ Supported | Billing invoices |
+| `Leads` | ✅ Supported | Lead records |
+| `Notes` | ✅ Supported | Note records |
+| `Price_Books` | ✅ Supported | Pricing lists |
+| `Products` | ✅ Supported | Product catalog |
+| `Purchase_Orders` | ✅ Supported | Purchase orders |
+| `Quotes` | ✅ Supported | Price quotes |
+| `Sales_Orders` | ✅ Supported | Sales orders |
+| `Solutions` | ✅ Supported | Knowledge base |
+| `Tasks` | ✅ Supported | Task activities |
+| `Vendors` | ✅ Supported | Supplier contacts |
+| **Subform Modules (handled as virtual tables)** |||
+| `Invoiced_Items` | ✅ Virtual | Extracted from Invoices subform |
+| `Ordered_Items` | ✅ Virtual | Extracted from Sales_Orders subform |
+| `Purchase_Items` | ✅ Virtual | Extracted from Purchase_Orders subform |
+| `Quoted_Items` | ✅ Virtual | Extracted from Quotes subform |
+| **Excluded - No Fields / Empty Schema** |||
+| `Actions_Performed` | ❌ Excluded | No fields available from API |
+| `Visits` | ❌ Excluded | No fields available from API |
+| **Excluded - Analytics Modules (different API structure)** |||
+| `Analytics` | ❌ Excluded | Dashboard/reporting module, not data storage |
+| `Email_Analytics` | ❌ Excluded | Email tracking analytics, requires different API |
+| `Email_Sentiment` | ❌ Excluded | AI sentiment analysis, requires different API |
+| `Email_Template_Analytics` | ❌ Excluded | Template performance metrics, requires different API |
+| **Excluded - System/Internal Modules** |||
+| `Locking_Information__s` | ❌ Excluded | System module, returns 403 Forbidden |
+| `Unknown__s` | ❌ Excluded | Internal system module |
+| **Excluded - UI/Navigation Modules (not data tables)** |||
+| `Activities` | ❌ Excluded | Aggregate view of Tasks/Events/Calls, not separate data |
+| `Feeds` | ❌ Excluded | Activity stream/social feed, not structured data |
+| `Home` | ❌ Excluded | Dashboard/home page module |
+| `Reports` | ❌ Excluded | Reporting engine, not data storage |
+| `SalesInbox` | ❌ Excluded | Email inbox integration UI |
+| `Social` | ❌ Excluded | Social media integration UI |
+| **Excluded - Email System Modules** |||
+| `Emails` | ❌ Excluded | Email records - complex structure, often requires Zoho Mail integration |
+| `Email_Drafts__s` | ❌ Excluded | Draft emails - transient data |
+| `Email_Template__s` | ❌ Excluded | Email templates - configuration, not transactional data |
+| **Excluded - Forecasting Modules** |||
+| `Forecast_Groups` | ❌ Excluded | Forecasting configuration |
+| `Forecast_Items` | ❌ Excluded | Forecast line items - complex relationships |
+| `Forecast_Quotas` | ❌ Excluded | Quota definitions |
+| `Forecasts` | ❌ Excluded | Forecast summaries - aggregate data |
+| **Excluded - Other Specialized Modules** |||
+| `CalendarBookings__s` | ❌ Excluded | Calendar booking integration |
+| `DealHistory` | ❌ Excluded | Deal audit trail - uses History API instead |
+| `Documents` | ❌ Excluded | Document storage - uses Files API |
+
+### Adding Support for Excluded Modules
+
+If you need data from an excluded module, consider:
+
+1. **Custom modules**: The connector automatically discovers and supports custom modules with `generated_type: "custom"`
+2. **Feature request**: Open an issue to add support for specific modules
+3. **Fork and extend**: Add the module to the connector's supported list
+
+For modules with different API structures (Analytics, Forecasts, Emails), additional implementation work is required to handle their specific endpoints and data formats
 
 **Retrieving the module list dynamically**:
 
