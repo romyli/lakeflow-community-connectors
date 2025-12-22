@@ -39,7 +39,9 @@ def register_lakeflow_source(spark):
                 raise ValueError(f"Expected a dictionary for StructType, got {type(value)}")
             # Spark Python -> Arrow conversion require missing StructType fields to be assigned None.
             if value == {}:
-                raise ValueError(f"field in StructType cannot be an empty dict. Please assign None as the default value instead.")
+                raise ValueError(
+                    f"field in StructType cannot be an empty dict. Please assign None as the default value instead."
+                )
             # For StructType, recursively parse fields into a Row
             field_dict = {}
             for field in field_type.fields:
@@ -47,11 +49,15 @@ def register_lakeflow_source(spark):
                 # 1. set it to None when schema marks it as nullable
                 # 2. Otherwise, raise an error.
                 if field.name in value:
-                    field_dict[field.name] = parse_value(value.get(field.name), field.dataType)
+                    field_dict[field.name] = parse_value(
+                        value.get(field.name), field.dataType
+                    )
                 elif field.nullable:
                     field_dict[field.name] = None
                 else:
-                    raise ValueError(f"Field {field.name} is not nullable but not found in the input")
+                    raise ValueError(
+                        f"Field {field.name} is not nullable but not found in the input"
+                    )
 
             return Row(**field_dict)
         elif isinstance(field_type, ArrayType):
@@ -68,7 +74,10 @@ def register_lakeflow_source(spark):
             # Handle MapType - new support
             if not isinstance(value, dict):
                 raise ValueError(f"Expected a dictionary for MapType, got {type(value)}")
-            return {parse_value(k, field_type.keyType): parse_value(v, field_type.valueType) for k, v in value.items()}
+            return {
+                parse_value(k, field_type.keyType): parse_value(v, field_type.valueType)
+                for k, v in value.items()
+            }
         # Handle primitive types with more robust error handling and type conversion
         try:
             if isinstance(field_type, StringType):
@@ -147,7 +156,10 @@ def register_lakeflow_source(spark):
                 raise TypeError(f"Unsupported field type: {field_type}")
         except (ValueError, TypeError) as e:
             # Add context to the error
-            raise ValueError(f"Error converting '{value}' ({type(value)}) to {field_type}: {str(e)}")
+            raise ValueError(
+                f"Error converting '{value}' ({type(value)}) to {field_type}: {str(e)}"
+            )
+
 
     ########################################################
     # sources/zoho_crm/zoho_crm.py
@@ -186,8 +198,8 @@ def register_lakeflow_source(spark):
             Initialize the Zoho CRM connector with connection-level options.
 
             Expected options:
-                - client_id: OAuth Client ID from Zoho API Console
-                - client_value_tmp: OAuth Client Secret from Zoho API Console
+                - client_value_tmp: OAuth Client ID from Zoho API Console
+                - client_secret: OAuth Client Secret from Zoho API Console
                 - refresh_value_tmp: Long-lived refresh token obtained from OAuth flow
                 - base_url (optional): Zoho accounts URL for OAuth. Defaults to https://accounts.zoho.com
                   Examples: https://accounts.zoho.com (US), https://accounts.zoho.eu (EU),
@@ -199,11 +211,11 @@ def register_lakeflow_source(spark):
             https://www.zoho.com/accounts/protocol/oauth/web-apps/authorization.html
             """
             self.client_id = options.get("client_id")
-            self.client_value_tmp = options.get("client_value_tmp")
-            self.refresh_value_tmp = options.get("refresh_value_tmp")
+            self.client_secret = options.get("client_value_tmp")
+            self.refresh_token = options.get("refresh_value_tmp")
 
-            if not all([self.client_id, self.client_value_tmp, self.refresh_value_tmp]):
-                raise ValueError("Zoho CRM connector requires 'client_id', 'client_value_tmp', and 'refresh_value_tmp' in options")
+            if not all([self.client_id, self.client_secret, self.refresh_token]):
+                raise ValueError("Zoho CRM connector requires 'client_id', 'client_value_tmp', and 'refresh_value_tmp' in the UC connection")
 
             # base_url is the accounts/OAuth URL (e.g., https://accounts.zoho.eu)
             self.accounts_url = options.get("base_url", "https://accounts.zoho.com").rstrip("/")
@@ -246,10 +258,10 @@ def register_lakeflow_source(spark):
             token_url = f"{self.accounts_url}/oauth/v2/token"
 
             data = {
-                "refresh_value_tmp": self.refresh_value_tmp,
+                "refresh_token": self.refresh_token,
                 "client_id": self.client_id,
-                "client_value_tmp": self.client_value_tmp,
-                "grant_type": "refresh_value_tmp",
+                "client_secret": self.client_secret,
+                "grant_type": "refresh_token",
             }
 
             response = requests.post(token_url, data=data)
@@ -266,7 +278,8 @@ def register_lakeflow_source(spark):
                 raise Exception(
                     f"Token refresh response missing 'access_token'. "
                     f"Response: {token_data}. "
-                    f"Please check your client_id, client_value_tmp, and refresh_value_tmp are valid."
+                    f"Requested with data: {data}. "
+                    f"Please check your client_id, client_secret, and refresh_token are valid."
                 )
 
             self.access_token = token_data["access_token"]
@@ -928,9 +941,7 @@ def register_lakeflow_source(spark):
                         response = self._make_request("GET", endpoint, params=params)
                     except requests.exceptions.HTTPError as e:
                         if e.response.status_code == 401 and table_name == "Users":
-                            print(
-                                f"[WARNING] Users table requires ZohoCRM.users.READ scope. " f"Please re-authorize with additional scopes to access user data."
-                            )
+                            print(f"[WARNING] Users table requires ZohoCRM.users.READ scope. " f"Please re-authorize with additional scopes to access user data.")
                             return  # Return empty generator
                         raise
                     except Exception as e:
@@ -1279,6 +1290,7 @@ def register_lakeflow_source(spark):
 
                 page += 1
 
+
     ########################################################
     # pipeline/lakeflow_python_source.py
     ########################################################
@@ -1286,6 +1298,7 @@ def register_lakeflow_source(spark):
     METADATA_TABLE = "_lakeflow_metadata"
     TABLE_NAME = "tableName"
     TABLE_NAME_LIST = "tableNameList"
+
 
     class LakeflowStreamReader(SimpleDataSourceStreamReader):
         """
@@ -1309,7 +1322,9 @@ def register_lakeflow_source(spark):
             return {}
 
         def read(self, start: dict) -> (Iterator[tuple], dict):
-            records, offset = self.lakeflow_connect.read_table(self.options["tableName"], start, self.options)
+            records, offset = self.lakeflow_connect.read_table(
+                self.options["tableName"], start, self.options
+            )
             rows = map(lambda x: parse_value(x, self.schema), records)
             return rows, offset
 
@@ -1320,6 +1335,7 @@ def register_lakeflow_source(spark):
             # For tables ingested as incremental CDC, it is only necessary that no new changes
             # are missed in the returned records.
             return self.read(start)[0]
+
 
     class LakeflowBatchReader(DataSourceReader):
         def __init__(
@@ -1338,7 +1354,9 @@ def register_lakeflow_source(spark):
             if self.table_name == METADATA_TABLE:
                 all_records = self._read_table_metadata()
             else:
-                all_records, _ = self.lakeflow_connect.read_table(self.table_name, None, self.options)
+                all_records, _ = self.lakeflow_connect.read_table(
+                    self.table_name, None, self.options
+                )
 
             rows = map(lambda x: parse_value(x, self.schema), all_records)
             return iter(rows)
@@ -1351,6 +1369,7 @@ def register_lakeflow_source(spark):
                 metadata = self.lakeflow_connect.read_table_metadata(table, self.options)
                 all_records.append({"tableName": table, **metadata})
             return all_records
+
 
     class LakeflowSource(DataSource):
         def __init__(self, options):
@@ -1381,5 +1400,6 @@ def register_lakeflow_source(spark):
 
         def simpleStreamReader(self, schema: StructType):
             return LakeflowStreamReader(self.options, schema, self.lakeflow_connect)
+
 
     spark.dataSource.register(LakeflowSource)

@@ -63,12 +63,12 @@ class LakeflowConnect:
         sources/zoho_crm/configs/README.md or visit:
         https://www.zoho.com/accounts/protocol/oauth/web-apps/authorization.html
         """
-        self.client_value_tmp = options.get("client_value_tmp")
-        self.client_secret = options.get("client_secret")
-        self.refresh_value_tmp = options.get("refresh_value_tmp")
+        self.client_id = options.get("client_id")
+        self.client_secret = options.get("client_value_tmp")
+        self.refresh_token = options.get("refresh_value_tmp")
 
-        if not all([self.client_value_tmp, self.client_secret, self.refresh_value_tmp]):
-            raise ValueError("Zoho CRM connector requires 'client_value_tmp', 'client_secret', and 'refresh_value_tmp' in options")
+        if not all([self.client_id, self.client_secret, self.refresh_token]):
+            raise ValueError("Zoho CRM connector requires 'client_id', 'client_value_tmp', and 'refresh_value_tmp' in the UC connection")
 
         # base_url is the accounts/OAuth URL (e.g., https://accounts.zoho.eu)
         self.accounts_url = options.get("base_url", "https://accounts.zoho.com").rstrip("/")
@@ -111,10 +111,10 @@ class LakeflowConnect:
         token_url = f"{self.accounts_url}/oauth/v2/token"
 
         data = {
-            "refresh_value_tmp": self.refresh_value_tmp,
-            "client_value_tmp": self.client_value_tmp,
+            "refresh_token": self.refresh_token,
+            "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "grant_type": "refresh_value_tmp",
+            "grant_type": "refresh_token",
         }
 
         response = requests.post(token_url, data=data)
@@ -131,7 +131,8 @@ class LakeflowConnect:
             raise Exception(
                 f"Token refresh response missing 'access_token'. "
                 f"Response: {token_data}. "
-                f"Please check your client_value_tmp, client_secret, and refresh_value_tmp are valid."
+                f"Requested with data: {data}. "
+                f"Please check your client_id, client_secret, and refresh_token are valid."
             )
 
         self.access_token = token_data["access_token"]
