@@ -1,0 +1,6 @@
+{
+  "access_token": "YOUR_ACCESS_TOKEN",
+  "access_token_expires_at": "2099-01-01T00:00:00.000000Z",
+  "organization_id": "YOUR_ORGANIZATION_ID",
+  "region": "com" 
+}
