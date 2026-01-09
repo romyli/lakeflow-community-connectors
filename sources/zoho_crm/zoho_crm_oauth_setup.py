@@ -1,4 +1,5 @@
 # Databricks notebook source
+# pylint: skip-file
 # MAGIC %md
 # MAGIC # Zoho CRM OAuth Setup
 # MAGIC
