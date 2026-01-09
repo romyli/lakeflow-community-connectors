@@ -15,7 +15,7 @@ def test_zoho_books_connector():
 
     # Load configuration
     parent_dir = Path(__file__).parent.parent
-    config_path = parent_dir / "configs" / "dev_config.json"
+    config_path = parent_dir / "configs" / "dev_config copy.json"
     # Zoho Books connector currently doesn't use dev_table_config.json, so it's omitted
 
     config = load_config(config_path)

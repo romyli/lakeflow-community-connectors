@@ -67,12 +67,13 @@ class LakeflowConnect:
         return self.access_token
 
     def _make_api_call(
-        self, endpoint: str, params: dict = None, method: str = "GET"
+        self, endpoint: str, data: dict = None, params: dict = None, method: str = "GET"
     ) -> dict:
         """
         Makes an authenticated API call to Zoho Books.
         Args:
             endpoint: The API endpoint relative to the base URI (e.g., "/contacts").
+            data: Optional dictionary for the request body (for POST/PUT).
             params: Optional dictionary of query parameters.
             method: HTTP method (GET, POST, PUT).
         Returns:
@@ -84,14 +85,14 @@ class LakeflowConnect:
 
         if params is None:
             params = {}
-        params["organization_id"] = self.organization_id
+        params["organization_id"] = self.organization_id # organization_id is always a query parameter
 
         if method == "GET":
             response = requests.get(url, headers=headers, params=params)
         elif method == "POST":
-            response = requests.post(url, headers=headers, json=params) # Assuming JSON body for POST/PUT
+            response = requests.post(url, headers=headers, params=params, json=data)
         elif method == "PUT":
-            response = requests.put(url, headers=headers, json=params)
+            response = requests.put(url, headers=headers, params=params, json=data)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
 
@@ -105,6 +106,126 @@ class LakeflowConnect:
             A list of table names.
         """
         return self.supported_tables
+
+    def _get_predefined_table_schema(self, table_name: str) -> StructType | None:
+        """
+        Returns a predefined Spark StructType schema for known Zoho Books tables.
+        This provides more explicit schemas than inference from sample data, especially for
+        tables that might return empty lists or have complex nested structures not easily inferred.
+        """
+        if table_name == "Organizations":
+            return StructType([
+                StructField("organization_id", StringType(), False),
+                StructField("name", StringType(), True),
+                StructField("contact_name", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("is_default_org", BooleanType(), True),
+                StructField("language_code", StringType(), True),
+                StructField("fiscal_year_start_month", LongType(), True),
+                StructField("account_created_date", DateType(), True),
+                StructField("time_zone", StringType(), True),
+                StructField("is_org_active", BooleanType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("currency_symbol", StringType(), True),
+                StructField("currency_format", StringType(), True),
+                StructField("price_precision", LongType(), True),
+            ])
+        elif table_name == "Contacts":
+            return StructType([
+                StructField("contact_id", StringType(), False),
+                StructField("contact_name", StringType(), True),
+                StructField("company_name", StringType(), True),
+                StructField("website", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("phone", StringType(), True),
+                StructField("mobile", StringType(), True),
+                StructField("contact_type", StringType(), True), # e.g., customer, vendor
+                StructField("status", StringType(), True), # e.g., active, inactive
+                StructField("created_time", TimestampType(), True),
+                StructField("last_modified_time", TimestampType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("payment_terms", LongType(), True),
+                StructField("payment_terms_label", StringType(), True),
+                StructField("is_portal_enabled", BooleanType(), True),
+                StructField("credit_limit", DoubleType(), True),
+                StructField("outstanding_receivable_amount", DoubleType(), True),
+                StructField("outstanding_payable_amount", DoubleType(), True),
+                StructField("unbilled_amount", DoubleType(), True),
+                StructField("custom_fields", ArrayType(MapType(StringType(), StringType())), True), # Flexible custom fields as array of maps
+                StructField("billing_address", StructType([
+                    StructField("address", StringType(), True),
+                    StructField("city", StringType(), True),
+                    StructField("state", StringType(), True),
+                    StructField("zip", StringType(), True),
+                    StructField("country", StringType(), True),
+                    StructField("fax", StringType(), True),
+                    StructField("phone", StringType(), True),
+                ]), True),
+                StructField("shipping_address", StructType([
+                    StructField("address", StringType(), True),
+                    StructField("city", StringType(), True),
+                    StructField("state", StringType(), True),
+                    StructField("zip", StringType(), True),
+                    StructField("country", StringType(), True),
+                    StructField("fax", StringType(), True),
+                    StructField("phone", StringType(), True),
+                ]), True),
+                StructField("contact_persons", ArrayType(StructType([
+                    StructField("contact_person_id", StringType(), True),
+                    StructField("first_name", StringType(), True),
+                    StructField("last_name", StringType(), True),
+                    StructField("email", StringType(), True),
+                    StructField("phone", StringType(), True),
+                    StructField("mobile", StringType(), True),
+                ])), True),
+            ])
+        elif table_name == "Invoices":
+            return StructType([
+                StructField("invoice_id", StringType(), False),
+                StructField("customer_id", StringType(), True),
+                StructField("customer_name", StringType(), True),
+                StructField("status", StringType(), True), # e.g., draft, sent, overdue, paid
+                StructField("invoice_number", StringType(), True),
+                StructField("reference_number", StringType(), True),
+                StructField("date", DateType(), True),
+                StructField("due_date", DateType(), True),
+                StructField("exchange_rate", DoubleType(), True),
+                StructField("total", DoubleType(), True),
+                StructField("balance", DoubleType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("created_time", TimestampType(), True),
+                StructField("last_modified_time", TimestampType(), True),
+                StructField("line_items", ArrayType(StructType([
+                    StructField("line_item_id", StringType(), True),
+                    StructField("item_id", StringType(), True),
+                    StructField("name", StringType(), True),
+                    StructField("description", StringType(), True),
+                    StructField("rate", DoubleType(), True),
+                    StructField("quantity", DoubleType(), True),
+                    StructField("item_total", DoubleType(), True),
+                ])), True),
+                StructField("payment_expected_date", DateType(), True),
+                StructField("template_id", StringType(), True),
+                StructField("salesperson_id", StringType(), True),
+                StructField("salesperson_name", StringType(), True),
+                StructField("custom_fields", ArrayType(MapType(StringType(), StringType())), True),
+            ])
+        elif table_name == "Users":
+            return StructType([
+                StructField("user_id", StringType(), False),
+                StructField("name", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("status", StringType(), True), # e.g., active, inactive
+                StructField("user_role_id", StringType(), True),
+                StructField("user_role_name", StringType(), True),
+                StructField("is_current_user", BooleanType(), True),
+            ])
+        # Add predefined schemas for other critical tables here
+        return None
+
 
     def _infer_spark_type(self, value: Any) -> StructType | ArrayType | StringType | LongType | DoubleType | BooleanType | TimestampType | DateType:
         """
@@ -160,6 +281,125 @@ class LakeflowConnect:
         return StructType(fields)
 
 
+    def _get_predefined_table_schema(self, table_name: str) -> StructType | None:
+        """
+        Returns a predefined Spark StructType schema for known Zoho Books tables.
+        This provides more explicit schemas than inference from sample data, especially for
+        tables that might return empty lists or have complex nested structures not easily inferred.
+        """
+        if table_name == "Organizations":
+            return StructType([
+                StructField("organization_id", StringType(), False),
+                StructField("name", StringType(), True),
+                StructField("contact_name", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("is_default_org", BooleanType(), True),
+                StructField("language_code", StringType(), True),
+                StructField("fiscal_year_start_month", LongType(), True),
+                StructField("account_created_date", DateType(), True),
+                StructField("time_zone", StringType(), True),
+                StructField("is_org_active", BooleanType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("currency_symbol", StringType(), True),
+                StructField("currency_format", StringType(), True),
+                StructField("price_precision", LongType(), True),
+            ])
+        elif table_name == "Contacts":
+            return StructType([
+                StructField("contact_id", StringType(), False),
+                StructField("contact_name", StringType(), True),
+                StructField("company_name", StringType(), True),
+                StructField("website", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("phone", StringType(), True),
+                StructField("mobile", StringType(), True),
+                StructField("contact_type", StringType(), True), # e.g., customer, vendor
+                StructField("status", StringType(), True), # e.g., active, inactive
+                StructField("created_time", TimestampType(), True),
+                StructField("last_modified_time", TimestampType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("payment_terms", LongType(), True),
+                StructField("payment_terms_label", StringType(), True),
+                StructField("is_portal_enabled", BooleanType(), True),
+                StructField("credit_limit", DoubleType(), True),
+                StructField("outstanding_receivable_amount", DoubleType(), True),
+                StructField("outstanding_payable_amount", DoubleType(), True),
+                StructField("unbilled_amount", DoubleType(), True),
+                StructField("custom_fields", ArrayType(MapType(StringType(), StringType())), True), # Flexible custom fields as array of maps
+                StructField("billing_address", StructType([
+                    StructField("address", StringType(), True),
+                    StructField("city", StringType(), True),
+                    StructField("state", StringType(), True),
+                    StructField("zip", StringType(), True),
+                    StructField("country", StringType(), True),
+                    StructField("fax", StringType(), True),
+                    StructField("phone", StringType(), True),
+                ]), True),
+                StructField("shipping_address", StructType([
+                    StructField("address", StringType(), True),
+                    StructField("city", StringType(), True),
+                    StructField("state", StringType(), True),
+                    StructField("zip", StringType(), True),
+                    StructField("country", StringType(), True),
+                    StructField("fax", StringType(), True),
+                    StructField("phone", StringType(), True),
+                ]), True),
+                StructField("contact_persons", ArrayType(StructType([
+                    StructField("contact_person_id", StringType(), True),
+                    StructField("first_name", StringType(), True),
+                    StructField("last_name", StringType(), True),
+                    StructField("email", StringType(), True),
+                    StructField("phone", StringType(), True),
+                    StructField("mobile", StringType(), True),
+                ])), True),
+            ])
+        elif table_name == "Invoices":
+            return StructType([
+                StructField("invoice_id", StringType(), False),
+                StructField("customer_id", StringType(), True),
+                StructField("customer_name", StringType(), True),
+                StructField("status", StringType(), True), # e.g., draft, sent, overdue, paid
+                StructField("invoice_number", StringType(), True),
+                StructField("reference_number", StringType(), True),
+                StructField("date", DateType(), True),
+                StructField("due_date", DateType(), True),
+                StructField("exchange_rate", DoubleType(), True),
+                StructField("total", DoubleType(), True),
+                StructField("balance", DoubleType(), True),
+                StructField("currency_id", StringType(), True),
+                StructField("currency_code", StringType(), True),
+                StructField("created_time", TimestampType(), True),
+                StructField("last_modified_time", TimestampType(), True),
+                StructField("line_items", ArrayType(StructType([
+                    StructField("line_item_id", StringType(), True),
+                    StructField("item_id", StringType(), True),
+                    StructField("name", StringType(), True),
+                    StructField("description", StringType(), True),
+                    StructField("rate", DoubleType(), True),
+                    StructField("quantity", DoubleType(), True),
+                    StructField("item_total", DoubleType(), True),
+                ])), True),
+                StructField("payment_expected_date", DateType(), True),
+                StructField("template_id", StringType(), True),
+                StructField("salesperson_id", StringType(), True),
+                StructField("salesperson_name", StringType(), True),
+                StructField("custom_fields", ArrayType(MapType(StringType(), StringType())), True),
+            ])
+        elif table_name == "Users":
+            return StructType([
+                StructField("user_id", StringType(), False),
+                StructField("name", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("status", StringType(), True), # e.g., active, inactive
+                StructField("user_role_id", StringType(), True),
+                StructField("user_role_name", StringType(), True),
+                StructField("is_current_user", BooleanType(), True),
+            ])
+        # Add predefined schemas for other critical tables here
+        return None
+
     def get_table_schema(
         self, table_name: str, table_options: dict[str, str]
     ) -> StructType:
@@ -174,6 +414,12 @@ class LakeflowConnect:
         if table_name not in self.supported_tables:
             raise ValueError(f"Table '{table_name}' is not supported.")
 
+        # First, try to get a predefined schema
+        predefined_schema = self._get_predefined_table_schema(table_name)
+        if predefined_schema is not None:
+            return predefined_schema
+
+        # If no predefined schema, fall back to inference from API response
         # Special handling for "Organizations" as it's a top-level endpoint
         if table_name == "Organizations":
             endpoint = "/organizations"
@@ -196,13 +442,13 @@ class LakeflowConnect:
                 return self._build_struct_type_from_json(records[0])
             else:
                 # If no records, try to fetch a single object if a 'get' endpoint exists and infer from there
-                # This is a simplification; a more robust solution would know the singular endpoint for each object
                 # For now, return an empty StructType if no data to infer from
                 return StructType([])
         except Exception as e:
-            # Handle API errors or no data found
             print(f"Error fetching data for schema inference for table {table_name}: {e}")
             return StructType([]) # Return empty schema on error or no data
+
+
 
     def read_table_metadata(
         self, table_name: str, table_options: dict[str, str]
@@ -312,11 +558,15 @@ class LakeflowConnect:
             # True incremental (e.g., CDC based on timestamps) would require more specific API features.
             pass # Placeholder, as direct timestamp filtering might not be universally supported for incremental in Zoho Books API v3 without explicit API calls per object
 
-        # Special handling for "Organizations"
+        # Special handling for "Organizations" and "Invoices"
         if table_name == "Organizations":
             endpoint = "/organizations"
             response_key = "organizations"
+        elif table_name == "Invoices":
+            endpoint = "/invoices"
+            response_key = "invoices"
         else:
+            # Most tables follow a pluralized endpoint name
             endpoint = f"/{table_name.lower().replace(' ', '')}s"
             response_key = table_name.lower().replace(' ', '') + "s"
 
