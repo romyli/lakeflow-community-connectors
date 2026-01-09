@@ -13,6 +13,75 @@ from typing import Iterator, Optional
 import requests
 
 
+class ZohoAPIError(Exception):
+    """Exception for Zoho CRM API errors."""
+
+    # Friendly messages for common Zoho error codes
+    # See: https://www.zoho.com/developer/help/api/error-messages.html
+    KNOWN_ERRORS = {
+        # OAuth/Auth errors
+        "INVALID_TOKEN": "Access token expired or invalid.",
+        "INVALID_CLIENT": "Invalid client_id or client_secret.",
+        "AUTHENTICATION_FAILURE": "Authentication failed. Check OAuth credentials.",
+        "NO_PERMISSION": "Missing required OAuth scopes.",
+        "OAUTH_SCOPE_MISMATCH": "OAuth scope mismatch. Re-authorize with correct scopes.",
+        # Zoho API error codes
+        "4000": "Use OAuth token instead of API ticket.",
+        "4001": "No API permission for this operation.",
+        "4101": "Zoho CRM is disabled for this account.",
+        "4102": "No CRM account found.",
+        "4103": "Record not found with the specified ID.",
+        "4401": "Mandatory field missing in request.",
+        "4420": "Invalid search parameter or value.",
+        "4421": "API call limit exceeded.",
+        "4422": "No records available in this module.",
+        "4423": "Exceeded record search limit.",
+        "4500": "Internal server error.",
+        "4501": "API Key is inactive.",
+        "4502": "This module is not supported in your Zoho CRM edition.",
+        "4600": "Invalid API parameter or spelling error in API URL.",
+        "4807": "File size limit exceeded.",
+        "4809": "Storage space limit exceeded.",
+        "4820": "Rate limit exceeded. Wait before retrying.",
+        "4831": "Missing required parameters.",
+        "4832": "Invalid data type (text given for integer field).",
+        "4834": "Invalid or expired ticket.",
+        "4890": "Wrong API Key.",
+        # Permission errors
+        "401": "No module permission.",
+        "401.1": "No permission to create records.",
+        "401.2": "No permission to edit records.",
+        "401.3": "No permission to delete records.",
+        # Module errors
+        "INVALID_MODULE": "Module not available in your Zoho CRM edition.",
+        "MODULE_NOT_SUPPORTED": "This module is not accessible via API.",
+    }
+
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        super().__init__(f"Zoho API error ({status_code}): {message}")
+
+    @classmethod
+    def from_response(cls, response: requests.Response) -> "ZohoAPIError":
+        """Create exception from HTTP response."""
+        error_code = None
+        message = response.text[:200]
+
+        # Try to parse Zoho's JSON error response
+        try:
+            data = response.json()
+            error_code = data.get("code") or data.get("error")
+            message = data.get("message") or data.get("error_description") or message
+        except ValueError:
+            pass
+
+        # Use friendly message if we recognize the error code
+        if error_code and error_code in cls.KNOWN_ERRORS:
+            message = cls.KNOWN_ERRORS[error_code]
+
+        return cls(response.status_code, message)
+
+
 class ZohoAPIClient:
     """
     HTTP client for Zoho CRM API with OAuth2 authentication.
@@ -78,19 +147,13 @@ class ZohoAPIClient:
 
         response = requests.post(token_url, data=data, timeout=30)
 
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            raise Exception(f"Failed to refresh access token: {e}. Response: {response.text}")
+        if response.status_code >= 400:
+            raise ZohoAPIError.from_response(response)
 
         token_data = response.json()
 
         if "access_token" not in token_data:
-            raise Exception(
-                f"Token refresh response missing 'access_token'. "
-                f"Response: {token_data}. "
-                f"Please check your client_id, client_secret, and refresh_token are valid."
-            )
+            raise ZohoAPIError(200, "Token refresh failed. Check your OAuth credentials.")
 
         self._access_token = token_data["access_token"]
         expires_in = token_data.get("expires_in", 3600)
@@ -130,35 +193,34 @@ class ZohoAPIClient:
             headers["Content-Type"] = "application/json"
 
         for attempt in range(max_retries):
-            try:
-                response = self._make_http_request(method, url, headers, params, data)
+            response = self._make_http_request(method, url, headers, params, data)
 
-                # Handle rate limiting
-                if response.status_code == 429:
-                    if attempt < max_retries - 1:
-                        wait_time = 2**attempt
-                        time.sleep(wait_time)
-                        continue
-                    raise Exception("Rate limit exceeded. Please wait and try again later.")
-
-                response.raise_for_status()
-
-                # Handle empty responses
-                if not response.text or response.text.strip() == "":
-                    return {}
-
-                return response.json()
-
-            except requests.exceptions.HTTPError as e:
-                # Retry once with fresh token on 401
-                if e.response.status_code == 401 and attempt == 0:
-                    self._access_token = None
-                    access_token = self._get_access_token()
-                    headers["Authorization"] = f"Zoho-oauthtoken {access_token}"
+            # Handle rate limiting with retry
+            if response.status_code == 429:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    time.sleep(wait_time)
                     continue
-                raise
+                raise ZohoAPIError.from_response(response)
 
-        raise Exception(f"Failed to make request after {max_retries} attempts")
+            # Handle 401 with token refresh retry
+            if response.status_code == 401 and attempt == 0:
+                self._access_token = None
+                access_token = self._get_access_token()
+                headers["Authorization"] = f"Zoho-oauthtoken {access_token}"
+                continue
+
+            # Handle other errors
+            if response.status_code >= 400:
+                raise ZohoAPIError.from_response(response)
+
+            # Handle empty responses
+            if not response.text or response.text.strip() == "":
+                return {}
+
+            return response.json()
+
+        raise ZohoAPIError(0, f"Failed after {max_retries} retries")
 
     def _make_http_request(
         self,
