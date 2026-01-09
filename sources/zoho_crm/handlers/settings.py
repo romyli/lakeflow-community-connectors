@@ -8,7 +8,6 @@ than standard CRM modules.
 import logging
 from typing import Iterator
 
-import requests
 from pyspark.sql.types import StructType, StructField, StringType
 
 from .base import TableHandler
@@ -57,13 +56,13 @@ class SettingsHandler(TableHandler):
     def get_schema(self, table_name: str, config: dict) -> StructType:
         """
         Get Spark schema for a settings table.
-        
+
         Settings tables have predefined schemas since they have fixed structures.
-        
+
         Args:
             table_name: Name of the settings table (Users, Roles, or Profiles)
             config: Table configuration (unused for settings)
-        
+
         Returns:
             Spark StructType representing the table schema
         """
@@ -76,14 +75,14 @@ class SettingsHandler(TableHandler):
     def get_metadata(self, table_name: str, config: dict) -> dict:
         """
         Get ingestion metadata for a settings table.
-        
+
         Users supports CDC via Modified_Time. Roles and Profiles use snapshot
         since they don't have modification timestamps.
-        
+
         Args:
             table_name: Name of the settings table
             config: Table configuration (unused for settings)
-        
+
         Returns:
             Dictionary with primary_keys, cursor_field (if CDC), and ingestion_type
         """
@@ -109,15 +108,15 @@ class SettingsHandler(TableHandler):
     ) -> tuple[Iterator[dict], dict]:
         """
         Read records from a settings table.
-        
+
         Uses the appropriate Zoho settings API endpoint based on table type.
         Users endpoint requires the ZohoCRM.users.READ OAuth scope.
-        
+
         Args:
             table_name: Name of the settings table
             config: Table configuration with endpoint and data_key
             start_offset: Offset dictionary (unused - settings use snapshot)
-        
+
         Returns:
             Tuple of (records iterator, empty offset dict)
         """
@@ -130,18 +129,7 @@ class SettingsHandler(TableHandler):
             if table_name == "Users":
                 params["type"] = "AllUsers"
 
-            try:
-                yield from self.client.paginate(
-                    endpoint, params=params, data_key=data_key
-                )
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 401 and table_name == "Users":
-                    logger.warning(
-                        "Users table requires ZohoCRM.users.READ scope. "
-                        "Please re-authorize with additional scopes."
-                    )
-                    return
-                raise
+            yield from self.client.paginate(endpoint, params=params, data_key=data_key)
 
         # Settings tables use snapshot - no cursor tracking
         return records_generator(), {}

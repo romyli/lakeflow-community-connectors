@@ -114,10 +114,7 @@ class LakeflowConnect:
         refresh_token = options.get("refresh_value_tmp")
 
         if not all([client_id, client_secret, refresh_token]):
-            raise ValueError(
-                "Zoho CRM connector requires 'client_id', 'client_value_tmp', "
-                "and 'refresh_value_tmp' in the UC connection"
-            )
+            raise ValueError("Zoho CRM connector requires 'client_id', 'client_value_tmp', " "and 'refresh_value_tmp' in the UC connection")
 
         # Store configuration
         self.initial_load_start_date = options.get("initial_load_start_date")
@@ -274,7 +271,4 @@ class LakeflowConnect:
         # Check standard modules
         available_tables = self.list_tables()
         if table_name not in available_tables:
-            raise ValueError(
-                f"Table '{table_name}' is not supported. "
-                f"Available tables: {', '.join(available_tables)}"
-            )
+            raise ValueError(f"Table '{table_name}' is not supported. " f"Available tables: {', '.join(available_tables)}")
