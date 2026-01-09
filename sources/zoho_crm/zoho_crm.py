@@ -4,19 +4,93 @@ Zoho CRM connector for Lakeflow/Databricks.
 This module provides the main LakeflowConnect class that orchestrates
 data ingestion from Zoho CRM into Databricks.
 
-Supports:
-- Standard CRM modules (Leads, Contacts, Accounts, Deals, etc.)
-- Organization/Settings tables (Users, Roles, Profiles)
-- Subform/Line Item tables (Quoted_Items, Ordered_Items, Invoiced_Items, Purchase_Items)
-- Junction/Relationship tables (Campaigns_Leads, Campaigns_Contacts, Contacts_X_Deals)
+=============================================================================
+CODE STRUCTURE
+=============================================================================
+
+The Zoho CRM connector is organized into modular components:
+
+    zoho_crm/
+    ├── zoho_crm.py          # Main orchestrator (this file)
+    ├── zoho_client.py       # API client: auth, HTTP, pagination
+    ├── zoho_types.py        # Spark type mappings and schema definitions
+    └── handlers/
+        ├── base.py          # Abstract TableHandler interface
+        ├── module.py        # Standard CRM modules (Leads, Contacts, etc.)
+        ├── settings.py      # Org tables (Users, Roles, Profiles)
+        ├── subform.py       # Line items (Quoted_Items, etc.)
+        └── related.py       # Junction tables (Campaigns_Leads, etc.)
+
+=============================================================================
+ARCHITECTURE
+=============================================================================
+
+LakeflowConnect (this file)
+    │
+    ├── ZohoAPIClient (zoho_client.py)
+    │       Handles OAuth2 authentication, HTTP requests, rate limiting,
+    │       and pagination. Shared by all handlers.
+    │
+    └── TableHandlers (handlers/)
+            Each handler implements get_schema(), get_metadata(), read()
+            for a specific table type. The orchestrator routes requests
+            to the appropriate handler based on table name.
+
+=============================================================================
+SUPPORTED TABLE TYPES
+=============================================================================
+
+1. Standard Modules (ModuleHandler)
+   - Dynamically discovered via Modules API
+   - Schemas fetched from Fields API
+   - Support CDC via Modified_Time cursor
+   - Examples: Leads, Contacts, Accounts, Deals, Tasks, Notes
+
+2. Settings Tables (SettingsHandler)
+   - Fixed set of org-level tables
+   - Predefined schemas (stable structure)
+   - Use different API endpoints than modules
+   - Tables: Users, Roles, Profiles
+
+3. Subform Tables (SubformHandler)
+   - Extracted from parent record subform fields
+   - Line items from Quotes, Sales Orders, Invoices, Purchase Orders
+   - Include _parent_id, _parent_module for traceability
+   - Tables: Quoted_Items, Ordered_Items, Invoiced_Items, Purchase_Items
+
+4. Junction Tables (RelatedHandler)
+   - Many-to-many relationships between modules
+   - Fetched via Related Records API
+   - Include _junction_id, _parent_id, _parent_module
+   - Tables: Campaigns_Leads, Campaigns_Contacts, Contacts_X_Deals
+
+=============================================================================
+USAGE
+=============================================================================
+
+    from sources.zoho_crm import LakeflowConnect
+
+    connector = LakeflowConnect({
+        "client_id": "your_client_id",
+        "client_value_tmp": "your_client_secret",
+        "refresh_value_tmp": "your_refresh_token",
+    })
+
+    # List available tables
+    tables = connector.list_tables()
+
+    # Get schema and metadata
+    schema = connector.get_table_schema("Leads", {})
+    metadata = connector.read_table_metadata("Leads", {})
+
+    # Read records (with incremental support)
+    records, next_offset = connector.read_table("Leads", {}, {})
 """
 
 import logging
 from typing import Iterator
 
 from pyspark.sql.types import StructType
-
-logger = logging.getLogger(__name__)
 
 from .zoho_client import ZohoAPIClient
 from .handlers import (
@@ -25,6 +99,8 @@ from .handlers import (
     SubformHandler,
     RelatedHandler,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class LakeflowConnect:
@@ -82,7 +158,17 @@ class LakeflowConnect:
         self._derived_tables = self._build_derived_tables_map()
 
     def _build_derived_tables_map(self) -> dict[str, tuple[object, dict]]:
-        """Build a mapping of derived table names to their handlers and configs."""
+        """
+        Build a mapping of derived table names to their handlers and configs.
+
+        Derived tables are non-module tables that require special handling:
+        - Settings tables (Users, Roles, Profiles)
+        - Subform tables (Quoted_Items, etc.)
+        - Junction/related tables (Campaigns_Leads, etc.)
+
+        Returns:
+            Dictionary mapping table name to (handler, config) tuple
+        """
         derived = {}
 
         # Settings tables
@@ -189,7 +275,15 @@ class LakeflowConnect:
         return handler.read(table_name, config, start_offset)
 
     def _validate_table_exists(self, table_name: str) -> None:
-        """Validate that a table exists and is supported."""
+        """
+        Validate that a table exists and is supported.
+
+        Args:
+            table_name: Name of the table to validate
+
+        Raises:
+            ValueError: If the table is not found in available tables
+        """
         # Derived tables are always valid
         if table_name in self._derived_tables:
             return
