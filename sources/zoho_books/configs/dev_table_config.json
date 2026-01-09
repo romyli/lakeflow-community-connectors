@@ -1,0 +1,99 @@
+    {
+        "Organizations": {
+            "primary_keys": ["organization_id"],
+            "scd_type": "SCD_TYPE_1"
+        },
+        "Contacts": {
+            "primary_keys": ["contact_id"],
+            "foreign_keys": {
+                "currency_id": "Currencies.currency_id"
+            }
+        },
+        "Contact_Persons": {
+            "primary_keys": ["contact_person_id"],
+            "foreign_keys": {
+                "contact_id": "Contacts.contact_id"
+            }
+        },
+        "Items": {
+            "primary_keys": ["item_id"],
+            "foreign_keys": {
+                "tax_id": "Taxes.tax_id"
+            }
+        },
+        "Invoices": {
+            "primary_keys": ["invoice_id"],
+            "foreign_keys": {
+                "customer_id": "Contacts.contact_id",
+                "currency_id": "Currencies.currency_id"
+            }
+        },
+        "Invoice_Items": {
+            "primary_keys": ["line_item_id"],
+            "foreign_keys": {
+                "invoice_id": "Invoices.invoice_id",
+                "item_id": "Items.item_id"
+            }
+        },
+        "Estimates": {
+            "primary_keys": ["estimate_id"],
+            "foreign_keys": {
+                "customer_id": "Contacts.contact_id"
+            }
+        },
+        "Sales_Orders": {
+            "primary_keys": ["salesorder_id"],
+            "foreign_keys": {
+                "customer_id": "Contacts.contact_id"
+            }
+        },
+        "Purchase_Orders": {
+            "primary_keys": ["purchaseorder_id"],
+            "foreign_keys": {
+                "vendor_id": "Contacts.contact_id"
+            }
+        },
+        "Bills": {
+            "primary_keys": ["bill_id"],
+            "foreign_keys": {
+                "vendor_id": "Contacts.contact_id"
+            }
+        },
+        "Expenses": {
+            "primary_keys": ["expense_id"],
+            "foreign_keys": {
+                "account_id": "Chart_of_Accounts.account_id",
+                "customer_id": "Contacts.contact_id"
+            }
+        },
+        "Chart_of_Accounts": {
+            "primary_keys": ["account_id"]
+        },
+        "Customer_Payments": {
+            "primary_keys": ["payment_id"],
+            "foreign_keys": {
+                "customer_id": "Contacts.contact_id"
+            }
+        },
+        "Credit_Notes": {
+            "primary_keys": ["creditnote_id"],
+            "foreign_keys": {
+                "customer_id": "Contacts.contact_id"
+            }
+        },
+        "Vendor_Credits": {
+            "primary_keys": ["vendor_credit_id"],
+            "foreign_keys": {
+                "vendor_id": "Contacts.contact_id"
+            }
+        },
+        "Taxes": {
+            "primary_keys": ["tax_id"]
+        },
+        "Currencies": {
+            "primary_keys": ["currency_id"]
+        },
+        "Users": {
+            "primary_keys": ["user_id"]
+        }
+    }
