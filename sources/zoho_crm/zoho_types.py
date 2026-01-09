@@ -287,4 +287,3 @@ def normalize_record(record: dict, json_fields: set) -> dict:
         else:
             normalized[key] = value
     return normalized
-

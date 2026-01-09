@@ -234,7 +234,10 @@ class ModuleHandler(TableHandler):
         # Materialize generator to get final max_modified_time
         records = list(records_generator())
 
-        next_offset = {"cursor_time": max_modified_time} if max_modified_time else (start_offset or {})
+        if max_modified_time:
+            next_offset = {"cursor_time": max_modified_time}
+        else:
+            next_offset = start_offset or {}
         return iter(records), next_offset
 
     def _read_records(

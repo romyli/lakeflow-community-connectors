@@ -124,7 +124,10 @@ class RelatedHandler(TableHandler):
 
             # Fetch related records for each parent
             for parent_id in parent_ids:
-                for record in self._get_related_records(parent_module, parent_id, related_module, related_fields):
+                related_records = self._get_related_records(
+                    parent_module, parent_id, related_module, related_fields
+                )
+                for record in related_records:
                     record["_junction_id"] = f"{parent_id}_{record.get('id')}"
                     record["_parent_id"] = parent_id
                     record["_parent_module"] = parent_module
@@ -174,11 +177,9 @@ class RelatedHandler(TableHandler):
         params = {"fields": fields}
 
         try:
-            for record in self.client.paginate(endpoint, params=params):
-                yield record
+            yield from self.client.paginate(endpoint, params=params)
         except requests.exceptions.HTTPError as e:
             # 204/400/404 means no related records - not an error
             if e.response.status_code in (204, 400, 404):
                 return
             raise
-

@@ -98,9 +98,10 @@ class LakeflowConnect:
             - client_id: OAuth Client ID from Zoho API Console
             - client_value_tmp: OAuth Client Secret from Zoho API Console
             - refresh_value_tmp: Long-lived refresh token obtained from OAuth flow
-            - base_url (optional): Zoho accounts URL for OAuth. Defaults to https://accounts.zoho.com
-              Examples: https://accounts.zoho.com (US), https://accounts.zoho.eu (EU),
-                        https://accounts.zoho.in (IN), https://accounts.zoho.com.au (AU)
+            - base_url (optional): Zoho accounts URL for OAuth.
+              Defaults to https://accounts.zoho.com
+              Examples: US=accounts.zoho.com, EU=accounts.zoho.eu,
+              IN=accounts.zoho.in, AU=accounts.zoho.com.au
             - initial_load_start_date (optional): Starting point for the first sync.
               If omitted, syncs all historical data.
 

@@ -131,8 +131,9 @@ class SettingsHandler(TableHandler):
                 params["type"] = "AllUsers"
 
             try:
-                for record in self.client.paginate(endpoint, params=params, data_key=data_key):
-                    yield record
+                yield from self.client.paginate(
+                    endpoint, params=params, data_key=data_key
+                )
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 401 and table_name == "Users":
                     logger.warning(

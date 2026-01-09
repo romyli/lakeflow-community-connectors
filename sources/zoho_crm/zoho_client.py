@@ -7,9 +7,10 @@ This module separates API concerns from business logic.
 
 import re
 import time
-import requests
 from datetime import datetime, timedelta
 from typing import Iterator, Optional
+
+import requests
 
 
 class ZohoAPIClient:
@@ -75,7 +76,7 @@ class ZohoAPIClient:
             "grant_type": "refresh_token",
         }
 
-        response = requests.post(token_url, data=data)
+        response = requests.post(token_url, data=data, timeout=30)
 
         try:
             response.raise_for_status()

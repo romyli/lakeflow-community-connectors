@@ -44,7 +44,6 @@ class TableHandler(ABC):
         Returns:
             Spark StructType representing the table schema
         """
-        pass
 
     @abstractmethod
     def get_metadata(self, table_name: str, config: dict) -> dict:
@@ -61,7 +60,6 @@ class TableHandler(ABC):
                 - cursor_field: (optional) Field name for incremental loading
                 - ingestion_type: "snapshot", "cdc", "cdc_with_deletes", or "append"
         """
-        pass
 
     @abstractmethod
     def read(
@@ -81,4 +79,3 @@ class TableHandler(ABC):
         Returns:
             Tuple of (records_iterator, next_offset)
         """
-        pass
