@@ -18,8 +18,8 @@ To configure the connector, provide the following parameters in your connector o
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
 | `client_id` | string | Yes | OAuth Client ID from Zoho API Console | `1000.XXXXX...` |
-| `client_secret` | string | Yes | OAuth Client Secret from Zoho API Console | `abc123...` |
-| `refresh_token` | string | Yes | OAuth Refresh Token (never expires) | `1000.YYYYY...` |
+| `client_value_tmp` | string | Yes | OAuth Client Secret from Zoho API Console | `abc123...` |
+| `refresh_value_tmp` | string | Yes | OAuth Refresh Token (never expires) | `1000.YYYYY...` |
 | `base_url` | string | No | Zoho accounts URL for your data center | `https://accounts.zoho.com` |
 | `initial_load_start_date` | string | No | Starting point for the first sync. If omitted, syncs all historical data. (ISO 8601 format) | `2024-01-01T00:00:00Z` |
 
@@ -100,6 +100,23 @@ A Unity Catalog connection for this connector can be created in two ways via the
 
 The connection can also be created using the standard Unity Catalog API.
 
+## Code Structure
+
+The connector is organized into modular components:
+
+```
+zoho_crm/
+├── zoho_crm.py          # Main orchestrator (LakeflowConnect class)
+├── zoho_client.py       # API client: auth, HTTP, pagination
+├── zoho_types.py        # Spark type mappings and schema definitions
+└── handlers/
+    ├── base.py          # Abstract TableHandler interface
+    ├── module.py        # Standard CRM modules (Leads, Contacts, etc.)
+    ├── settings.py      # Org tables (Users, Roles, Profiles)
+    ├── subform.py       # Line items (disabled by default)
+    └── related.py       # Junction tables (Campaigns_Leads, etc.)
+```
+
 ## Supported Objects
 
 This connector supports **dynamic module discovery** - it automatically discovers all available CRM modules in your Zoho CRM instance, including custom modules.
@@ -116,10 +133,10 @@ This connector supports **dynamic module discovery** - it automatically discover
 | `Events` | `id` | CDC | `Modified_Time` |
 | `Calls` | `id` | CDC | `Modified_Time` |
 | `Products` | `id` | CDC | `Modified_Time` |
-| `Quotes` | `id` | CDC | `Modified_Time` |
-| `Sales_Orders` | `id` | CDC | `Modified_Time` |
-| `Purchase_Orders` | `id` | CDC | `Modified_Time` |
-| `Invoices` | `id` | CDC | `Modified_Time` |
+| `Quotes`* | `id` | CDC | `Modified_Time` |
+| `Sales_Orders`* | `id` | CDC | `Modified_Time` |
+| `Purchase_Orders`* | `id` | CDC | `Modified_Time` |
+| `Invoices`* | `id` | CDC | `Modified_Time` |
 | `Campaigns` | `id` | CDC | `Modified_Time` |
 | `Vendors` | `id` | CDC | `Modified_Time` |
 | `Price_Books` | `id` | CDC | `Modified_Time` |
@@ -127,6 +144,8 @@ This connector supports **dynamic module discovery** - it automatically discover
 | `Solutions` | `id` | CDC | `Modified_Time` |
 | `Notes` | `id` | CDC | `Modified_Time` |
 | `Attachments` | `id` | Append | - |
+
+> **\*** *Quotes, Sales_Orders, Purchase_Orders, and Invoices require **Zoho Inventory** or **Zoho Books** integration. These modules return HTTP 400 errors if not enabled in your Zoho account.*
 
 ### Custom Modules
 
@@ -151,7 +170,7 @@ The connector captures deleted records using Zoho CRM's Deleted Records API. Del
 - `deleted_by`: Who deleted the record
 - `_zoho_deleted`: Boolean flag set to `true` for deleted records
 
-> **Note**: Subform line item deletions are not tracked incrementally by Zoho CRM. For complete subform sync, consider periodic full refreshes.
+> **Note**: Subform/line item tables (Quoted_Items, Ordered_Items, etc.) are **disabled by default** because they require Zoho Inventory or Zoho Books. To enable them, uncomment the relevant entries in `handlers/subform.py`.
 
 ### Special Columns
 
@@ -291,13 +310,8 @@ Some Zoho CRM modules (like `Visits`, `Actions_Performed`) may return empty resp
 
 ## Security Recommendations
 
-- **Store credentials securely**: Use Databricks Secrets for sensitive values
-  ```python
-  client_id = dbutils.secrets.get(scope="zoho-crm", key="client_id")
-  client_secret = dbutils.secrets.get(scope="zoho-crm", key="client_secret")
-  refresh_token = dbutils.secrets.get(scope="zoho-crm", key="refresh_token")
-  ```
-- **Rotate Client Secrets periodically** in Zoho API Console
+- **Credentials are stored securely** in the Unity Catalog connection - no need for separate secrets management
+- **Rotate Client Secrets periodically** in Zoho API Console (update the UC connection afterward)
 - **Never commit credentials** to version control
 - **Use minimal OAuth scopes** if you don't need full access
 
