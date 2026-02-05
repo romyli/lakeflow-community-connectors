@@ -1,0 +1,23 @@
+Table Name,PK,FK / References
+ORGANIZATION,organization_id,N/A
+CONTACT,contact_id,currency_id → CURRENCY(currency_id)
+CONTACT_PERSON,contact_person_id,contact_id → CONTACT(contact_id)
+ITEM,item_id,"tax_id → TAX(tax_id), purchase_account_id → CHART_OF_ACCOUNTS(account_id), account_id → CHART_OF_ACCOUNTS(account_id)"
+ESTIMATE,estimate_id,customer_id → CONTACT(contact_id)
+SALES_ORDER,salesorder_id,"customer_id → CONTACT(contact_id), estimate_id → ESTIMATE(estimate_id)"
+INVOICE,invoice_id,"customer_id → CONTACT(contact_id), salesorder_id → SALES_ORDER(salesorder_id)"
+CUSTOMER_PAYMENT,payment_id,"customer_id → CONTACT(contact_id), invoice_id → INVOICE(invoice_id)"
+CREDIT_NOTE,creditnote_id,customer_id → CONTACT(contact_id)
+PURCHASE_ORDER,purchaseorder_id,vendor_id → CONTACT(contact_id)
+BILL,bill_id,"vendor_id → CONTACT(contact_id), purchaseorder_id → PURCHASE_ORDER(purchaseorder_id)"
+EXPENSE,expense_id,"vendor_id → CONTACT(contact_id), customer_id → CONTACT(contact_id), account_id → CHART_OF_ACCOUNTS(account_id)"
+CHART_OF_ACCOUNTS,account_id,N/A
+PROJECT,project_id,customer_id → CONTACT(contact_id)
+TASK,task_id,project_id → PROJECT(project_id)
+TIME_ENTRY,time_entry_id,"project_id → PROJECT(project_id), task_id → TASK(task_id), user_id → USERS(user_id)"
+USERS,user_id,N/A
+TAX,tax_id,N/A
+CURRENCY,currency_id,N/A
+INVOICE_ITEM,line_item_id,"invoice_id → INVOICE(invoice_id), item_id → ITEM(item_id)"
+BILL_ITEM,line_item_id,"bill_id → BILL(bill_id), item_id → ITEM(item_id)"
+SALES_ORDER_ITEM,line_item_id,"salesorder_id → SALES_ORDER(salesorder_id), item_id → ITEM(item_id)"

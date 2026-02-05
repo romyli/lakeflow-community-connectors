@@ -1,0 +1,12 @@
+{
+    "client_id": "1000.L6NI2N4G3SUQ885LKVBUXQNLB3DC5R",
+    "client_secret": "1e87e37b3e129c85e4cfd3b284a987feb3d71be945",
+    "refresh_token_temp": "1000.1da2ad110df0262b49445a89b91c9061.d00e33996e406771f49b53d0c8e289b0",
+    "access_token_temp": "1000.8c4dcd5c9ddb8967fe81efd91392a5a8.b1b31cd75cbcc8fd46ad064c74686a98",
+    "access_token_expires_at": "2026-01-08T11:41:41.120Z",
+    "organization_id": "20111327995",
+    "region": "eu",
+    "redirect_uri": "https://e2-dogfood.staging.cloud.databricks.com/login/oauth/zoho_crm.html",
+    "base_url": "https://accounts.zoho.eu",
+    "initial_load_start_date": "2024-01-01T00:00:00Z"
+  }
